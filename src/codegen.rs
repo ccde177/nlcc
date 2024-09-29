@@ -40,6 +40,7 @@ impl fmt::Display for Instruction {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "\t.globl _{}", self.name)?;
@@ -47,6 +48,18 @@ impl fmt::Display for Function {
         for instruction in self.body.iter() {
             writeln!(f, "\t{instruction}")?;
         }
+        Ok(())
+    }
+}
+#[cfg(target_os = "linux")]
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "\t.globl {}", self.name)?;
+        writeln!(f, "{}:", self.name)?;
+        for instruction in self.body.iter() {
+            writeln!(f, "\t{instruction}")?;
+        }
+        writeln!(f, ".section .note.GNU-stak,\"\",@progbits")?;
         Ok(())
     }
 }
