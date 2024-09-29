@@ -1,3 +1,9 @@
+use std::collections::VecDeque;
+use std::{error, fmt};
+
+pub type Tokens = Vec<Token>;
+type Input = VecDeque<char>;
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token {
     Int,
@@ -10,24 +16,37 @@ pub enum Token {
     Constant(u64),
     Semicolon,
     CloseCurly,
+    Tilde,
+    Hyphen,
+    Decrement
 }
-
-pub type Tokens = Vec<Token>;
 
 #[derive(Debug)]
 pub enum LexError {
-    UnexpectedChar(char)
+    UnexpectedChar(char),
+    UnknownMcharOperator(String),
+    BadConstant(String)
 }
 
-impl std::fmt::Display for LexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl error::Error for LexError {}
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::UnexpectedChar(c) => write!(f, "Unexpected character {c}")
+            Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
+            Self::UnknownMcharOperator(s) => write!(f, "Unknown multi-character operator: {s}"),
+            Self::BadConstant(s) => write!(f, "Bad constant: {s}")
         }
     }
 }
 
-impl std::error::Error for LexError {}
+impl Token {
+    fn from_mchoperator(s: String) -> Result<Token, LexError> {
+        match s.as_str() {
+            "--" => Ok(Self::Decrement),
+            _ => Err(LexError::UnknownMcharOperator(s))
+        }
+    }
+}
 
 impl TryFrom<char> for Token {
     type Error = &'static str;
@@ -38,6 +57,8 @@ impl TryFrom<char> for Token {
             ')' => Ok(Self::CloseParanth),
             '{' => Ok(Self::OpenCurly),
             '}' => Ok(Self::CloseCurly),
+            '-' => Ok(Self::Hyphen),
+            '~' => Ok(Self::Tilde),
             _ => Err("Not a special character"),
         }
     }
@@ -54,87 +75,73 @@ impl From<String> for Token {
     }
 }
 
-
-#[derive(Eq, PartialEq)]
-enum LexerState {
-    Default,
-    Constant,
-    Identifier,
-}
-
-impl LexerState {
-    fn new() -> Self {
-        Self::Default
+fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
+    let first = input.pop_front().expect("Should never fail");
+    if input.is_empty() {
+        return Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first));
     }
-
-    fn is_default(&self) -> bool {
-        *self == LexerState::Default
-    }
-
-    fn is_constant(&self) -> bool {
-        *self == LexerState::Constant
-    }
-
-    fn is_identifier(&self) -> bool {
-        *self == LexerState::Identifier
+    match (first,input[0]) {
+        ('-','-') => Token::from_mchoperator(String::from("--")),
+        _ => Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first)),
     }
 }
 
-
-fn finalize_state(state: &mut LexerState, buffer: &mut String, tokens: &mut Tokens) {
-    if state.is_default() {
-        return;
+fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
+    let mut buf = String::new();
+    while !input.is_empty() && input[0].is_ascii_digit() {
+        let digit = input.pop_front().expect("Should never fail");
+        buf.push(digit);
     }
 
-    let token = match state {
-        LexerState::Identifier => Token::from(buffer.clone()),
-        LexerState::Constant => Token::Constant(buffer.parse().expect("Should never fail")),
-        _ => panic!("Should never be reached"),
-    };
+    if !input.is_empty() {
+        match input[0] {
+            'a'..='z' | 'A'..='Z' | '_' => return Err(LexError::UnexpectedChar(input[0])),
+            _ => ()
+        }
+    }
 
-    tokens.push(token);
-    *state = LexerState::Default;
-    buffer.clear();
+    buf.parse()
+        .map(|i| Token::Constant(i))
+        .map_err(|_| LexError::BadConstant(buf.clone()))
+}
+
+fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
+    let mut buf = String::new();
+    while !input.is_empty() && input[0].is_ascii_alphanumeric() {
+        let c = input.pop_front().expect("Should never fail");
+        buf.push(c);
+    }
+    Ok(Token::from(buf))
 }
 
 pub fn lex(input: String) -> Result<Tokens, LexError> {
     let mut tokens = Vec::new();
-    let mut buf = String::new();
-    let mut state = LexerState::new();
-
-    for c in input.chars() {
-        match c {
-            ';' | '{' | '}' | '(' | ')' => {
-                if !state.is_default() {
-                    finalize_state(&mut state, &mut buf, &mut tokens);
-                }
-                tokens.push(Token::try_from(c).expect("Should never fail"));
+    let mut input: Input = input.chars().collect();
+    
+    while !input.is_empty() {
+        match input[0] {
+            ';' | '{' | '}' | '(' | ')' | '~' => {
+                let token = Token::try_from(input[0]).expect("Should never fail");
+                tokens.push(token);
+                let _ = input.pop_front();
             }
-            '0'..='9' => {
-                if state.is_default() {
-                    state = LexerState::Constant;
-                }
-                buf.push(c);
+            '-' => {
+                let token = lex_mcharoperator(&mut input)?;
+                tokens.push(token);
             }
             'a'..='z' | 'A'..='Z' => {
-                if state.is_constant() {
-                    return Err(LexError::UnexpectedChar(c));
-                }
-                state = LexerState::Identifier;
-                buf.push(c);
+                let token = lex_identifier(&mut input)?;
+                tokens.push(token);
+            }
+            '0'..='9' => {
+                let token = lex_constant(&mut input)?;
+                tokens.push(token);
             }
             c if c.is_whitespace() => {
-                if !state.is_default() {
-                    finalize_state(&mut state, &mut buf, &mut tokens);
-                }
-            }
-            _ => return Err(LexError::UnexpectedChar(c)),
+                input.pop_front();
+            },
+            _ => return Err(LexError::UnexpectedChar(input[0]))
         }
     }
-
-    if !state.is_default() {
-        finalize_state(&mut state, &mut buf, &mut tokens);
-    }
-
     Ok(tokens)
 }
