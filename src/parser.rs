@@ -18,6 +18,12 @@ pub enum Statement {
 
 pub enum Expression {
     Constant(u64),
+    Unary(UnaryOperator, Box<Expression>)
+}
+
+pub enum UnaryOperator {
+    Complement,
+    Negate
 }
 
 #[derive(Debug)]
@@ -25,7 +31,8 @@ pub enum ParseError {
     ExpectedButGot(Token, Token),
     ExpectedButGotNone(Token),
     MoreTokensThanExpected(Tokens),
-    ExpectedConstant
+    BadExpression(Token),
+    ExpectedConstant,
 }
 
 impl fmt::Display for ParseError {
@@ -37,6 +44,7 @@ impl fmt::Display for ParseError {
             Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {:?} but got None", t),
             Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {:?}", ts),
             Self::ExpectedConstant => write!(f, "Expected constant"),
+            Self::BadExpression(t) => write!(f, "Bad expression starting with {:?}", t)
         }
     }
 }
@@ -65,6 +73,7 @@ fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
                 _ => Err(ParseError::ExpectedButGot(dummy.clone(), t.clone())),
     }})
 }
+
 fn expect_constant(tokens: &mut Tokens) -> Result<u64, ParseError> { 
     tokens.pop().and_then(|t| match t {
         Token::Constant(i) => Some(i),
@@ -72,9 +81,47 @@ fn expect_constant(tokens: &mut Tokens) -> Result<u64, ParseError> {
     }).ok_or(ParseError::ExpectedConstant)
 }
 
+fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
+    if let Some(token) = take_token(tokens) {
+        match token {
+            Token::Hyphen => Ok(UnaryOperator::Negate),
+            Token::Tilde => Ok(UnaryOperator::Complement),
+            _=> Err(ParseError::ExpectedButGot(Token::Hyphen, token))
+        }
+    } else {
+        Err(ParseError::ExpectedButGotNone(Token::Hyphen))
+    }
+}
+
+fn take_token(tokens: &mut Tokens) -> Option<Token> {
+    tokens.pop()
+}
+
 fn parse_expresssion(tokens: &mut Tokens) -> Result<Expression, ParseError> {
-    let constant = expect_constant(tokens)?;
-    Ok(Expression::Constant(constant))
+    if let Some(token) = tokens.last() {
+        match token {
+            Token::Constant(_) => {
+                let constant = expect_constant(tokens)?;
+                Ok(Expression::Constant(constant))
+            }
+            Token::Hyphen | Token::Tilde => {
+                let operator = parse_unary(tokens)?;
+                let inner_expression = Box::new(parse_expresssion(tokens)?);
+                Ok(Expression::Unary(operator, inner_expression))
+            }
+            Token::OpenParanth => {
+                take_token(tokens);
+                let inner_expression = parse_expresssion(tokens)?;
+                expect_token(tokens, Token::CloseParanth)?;
+                Ok(inner_expression)
+            }
+            _ => Err(ParseError::BadExpression(token.clone()))
+        }
+    } else {
+        //TODO: 
+        //Make a propper error
+        Err(ParseError::ExpectedConstant)
+    }
 }
 
 fn parse_statement(tokens: &mut Tokens) -> Result<Statement, ParseError> {

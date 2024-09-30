@@ -6,6 +6,7 @@ use std::fs;
 mod lexer;
 mod parser;
 mod codegen;
+mod tacky;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -44,6 +45,7 @@ fn main() -> anyhow::Result<()> {
     fs::remove_file(&preprocessed)?;
 
     if args.lex {
+        println!("{:?}", tokens);
         return Ok(());
     }
 

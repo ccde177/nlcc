@@ -74,7 +74,8 @@ impl fmt::Display for Program {
 
 fn gen_exp(exp: parser::Expression) -> Operand {
     match exp {
-        parser::Expression::Constant(i) => Operand::Imm(i)
+        parser::Expression::Constant(i) => Operand::Imm(i),
+        _ => unimplemented!()
     }
 }
 
