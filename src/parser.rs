@@ -3,27 +3,32 @@ use std::fmt;
 
 type Identifier = String;
 
+#[derive(Clone)]
 pub enum Program {
     FunDef(Function),
 }
 
+#[derive(Clone)]
 pub struct Function {
     pub name: Identifier,
     pub body: Statement,
 }
 
+#[derive(Clone)]
 pub enum Statement {
     Return(Expression),
 }
 
+#[derive(Clone)]
 pub enum Expression {
     Constant(u64),
-    Unary(UnaryOperator, Box<Expression>)
+    Unary(UnaryOperator, Box<Expression>),
 }
 
+#[derive(Clone)]
 pub enum UnaryOperator {
     Complement,
-    Negate
+    Negate,
 }
 
 #[derive(Debug)]
@@ -44,13 +49,12 @@ impl fmt::Display for ParseError {
             Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {:?} but got None", t),
             Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {:?}", ts),
             Self::ExpectedConstant => write!(f, "Expected constant"),
-            Self::BadExpression(t) => write!(f, "Bad expression starting with {:?}", t)
+            Self::BadExpression(t) => write!(f, "Bad expression starting with {:?}", t),
         }
     }
 }
 
 impl std::error::Error for ParseError {}
-
 
 fn expect_token(tokens: &mut Tokens, token: Token) -> Result<(), ParseError> {
     tokens
@@ -64,21 +68,25 @@ fn expect_token(tokens: &mut Tokens, token: Token) -> Result<(), ParseError> {
         })
 }
 
-fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> { 
+fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
     let dummy = Token::Identifier("".into());
-    tokens.pop()
-        .map_or(Err(ParseError::ExpectedButGotNone(dummy.clone())), |t| {
-            match t {
-                Token::Identifier(i) => Ok(i),
-                _ => Err(ParseError::ExpectedButGot(dummy.clone(), t.clone())),
-    }})
+    tokens.pop().map_or(
+        Err(ParseError::ExpectedButGotNone(dummy.clone())),
+        |t| match t {
+            Token::Identifier(i) => Ok(i),
+            _ => Err(ParseError::ExpectedButGot(dummy.clone(), t.clone())),
+        },
+    )
 }
 
-fn expect_constant(tokens: &mut Tokens) -> Result<u64, ParseError> { 
-    tokens.pop().and_then(|t| match t {
-        Token::Constant(i) => Some(i),
-        _ => None
-    }).ok_or(ParseError::ExpectedConstant)
+fn expect_constant(tokens: &mut Tokens) -> Result<u64, ParseError> {
+    tokens
+        .pop()
+        .and_then(|t| match t {
+            Token::Constant(i) => Some(i),
+            _ => None,
+        })
+        .ok_or(ParseError::ExpectedConstant)
 }
 
 fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
@@ -86,7 +94,7 @@ fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
         match token {
             Token::Hyphen => Ok(UnaryOperator::Negate),
             Token::Tilde => Ok(UnaryOperator::Complement),
-            _=> Err(ParseError::ExpectedButGot(Token::Hyphen, token))
+            _ => Err(ParseError::ExpectedButGot(Token::Hyphen, token)),
         }
     } else {
         Err(ParseError::ExpectedButGotNone(Token::Hyphen))
@@ -115,10 +123,10 @@ fn parse_expresssion(tokens: &mut Tokens) -> Result<Expression, ParseError> {
                 expect_token(tokens, Token::CloseParanth)?;
                 Ok(inner_expression)
             }
-            _ => Err(ParseError::BadExpression(token.clone()))
+            _ => Err(ParseError::BadExpression(token.clone())),
         }
     } else {
-        //TODO: 
+        //TODO:
         //Make a propper error
         Err(ParseError::ExpectedConstant)
     }
@@ -130,7 +138,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<Statement, ParseError> {
     expect_token(tokens, Token::Semicolon)?;
     Ok(Statement::Return(exp))
 }
- 
+
 fn parse_function(tokens: &mut Tokens) -> Result<Function, ParseError> {
     expect_token(tokens, Token::Int)?;
     let identifier = expect_identifier(tokens)?;
@@ -143,7 +151,10 @@ fn parse_function(tokens: &mut Tokens) -> Result<Function, ParseError> {
     if !tokens.is_empty() {
         Err(ParseError::MoreTokensThanExpected(tokens.clone()))
     } else {
-        Ok(Function { name: identifier, body: statement })
+        Ok(Function {
+            name: identifier,
+            body: statement,
+        })
     }
 }
 fn parse_program(tokens: &mut Tokens) -> Result<Program, ParseError> {

@@ -1,11 +1,11 @@
 use clap::Parser;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::fs;
 
+mod codegen;
 mod lexer;
 mod parser;
-mod codegen;
 mod tacky;
 
 #[derive(Parser)]
@@ -19,6 +19,9 @@ struct Args {
 
     #[arg(long)]
     codegen: bool,
+
+    #[arg(long)]
+    tacky: bool,
 
     input: PathBuf,
 }
@@ -39,7 +42,6 @@ fn main() -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("Failed to run preprocessor"));
     }
 
-
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
     let tokens = lexer::lex(source)?;
     fs::remove_file(&preprocessed)?;
@@ -54,15 +56,22 @@ fn main() -> anyhow::Result<()> {
     if args.parse {
         return Ok(());
     }
-    let asm = codegen::codegen(ast);
+
+    let tacky = tacky::emit_tacky(ast.clone());
+
+    if args.tacky {
+	return Ok(());
+    }
     
-    let mut asm_file = args.input.clone();
-    asm_file.set_extension("s");
-    fs::write(&asm_file, asm.to_string())?;
+    let asm = codegen::codegen(tacky);
 
     if args.codegen {
         return Ok(());
     }
+    
+    let mut asm_file = args.input.clone();
+    asm_file.set_extension("s");
+    fs::write(&asm_file, asm.to_string())?;
 
     let mut out_file = args.input.clone();
     out_file.set_extension("");

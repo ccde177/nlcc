@@ -1,32 +1,73 @@
-use crate::parser;
+use crate::tacky;
+
+use std::collections::HashMap;
 use std::fmt;
 
 pub enum Program {
-    Program(Function)
+    Program(Function),
 }
 
+type Identifier = String;
 type Instructions = Vec<Instruction>;
 
 pub struct Function {
     name: String,
-    body: Instructions
+    body: Instructions,
 }
 
 pub enum Instruction {
+    AllocateStack(u64),
     Mov(Operand, Operand),
+    Unary(UnaryOp, Operand),
     Ret
 }
 
+impl Instruction {
+    fn stack_operands(&self) -> bool {
+	match self {
+	    Self::Mov(src, dst) => {
+		src.is_stack() && dst.is_stack()
+	    }
+	    _ => false
+	}
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum UnaryOp {
+    Neg,
+    Not
+}
+
+#[derive(Clone)]
 pub enum Operand {
     Imm(u64),
-    Register
+    Register(Reg),
+    Pseudo(Identifier),
+    Stack(u64)
+}
+
+impl Operand {
+    fn is_stack(&self) -> bool {
+	match self {
+	    Self::Stack(_) => true,
+	    _ => false
+	}
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Reg {
+    Ax,
+    R10
 }
 
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Imm(i) => write!(f, "${i}"),
-            Self::Register => write!(f, "%eax")
+            Self::Register(_r) => write!(f, "%eax"),
+	    _ => unimplemented!()
         }
     }
 }
@@ -35,7 +76,8 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Mov(o1, o2) => write!(f, "movl {o1}, {o2}"),
-            Self::Ret => write!(f, "ret")
+            Self::Ret => write!(f, "ret"),
+	    _ => unimplemented!()
         }
     }
 }
@@ -51,6 +93,7 @@ impl fmt::Display for Function {
         Ok(())
     }
 }
+
 #[cfg(target_os = "linux")]
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -67,35 +110,144 @@ impl fmt::Display for Function {
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Program(fun) => write!(f, "{fun}")
+            Self::Program(fun) => write!(f, "{fun}"),
         }
     }
 }
 
-fn gen_exp(exp: parser::Expression) -> Operand {
-    match exp {
-        parser::Expression::Constant(i) => Operand::Imm(i),
-        _ => unimplemented!()
+fn val_to_operand(val: &tacky::Value) -> Operand {
+    match val {
+        tacky::Value::Constant(u) => Operand::Imm(*u),
+        tacky::Value::Var(identifier) => Operand::Pseudo(identifier.clone())
     }
 }
 
-fn gen_body(body: parser::Statement) -> Instructions {
-    match body {
-        parser::Statement::Return(exp) => vec![
-            Instruction::Mov(gen_exp(exp), Operand::Register),
-            Instruction::Ret
-        ]
-    }
-}
-fn gen_fundef(f: parser::Function) -> Function {
-    Function {
-        name: f.name, 
-        body: gen_body(f.body)
+fn unary_from_tacky(op: &tacky::UnaryOp) -> UnaryOp {
+    match op {
+        tacky::UnaryOp::Complement => UnaryOp::Not,
+        tacky::UnaryOp::Negate => UnaryOp::Neg
     }
 }
 
-pub fn codegen(ast: parser::Program) -> Program {
+type StackAllocMap = HashMap<Identifier, u64>;
+
+struct StackAllocator {
+    offset: u64,
+    map: StackAllocMap
+}
+
+impl StackAllocator {
+    fn new() -> Self {
+	Self {
+	    offset: 0,
+	    map: StackAllocMap::new(),
+	}
+    }
+
+    fn allocate_if_pseudo(&mut self, operand: Operand) -> Operand {
+	match operand {
+	    Operand::Pseudo(name) => {
+		let offset = self.allocate(&name);
+		Operand::Stack(offset)
+	    }
+	    _ => operand
+	}
+    }
+    
+    fn allocate(&mut self, name: &Identifier) -> u64 {
+	if self.map.contains_key(name) {
+	    return *self.map.get(name).unwrap();
+	}
+	self.offset += 4;
+	self.map.insert(name.clone(), self.offset);
+	self.offset
+    }
+
+    fn get_prologue(&self) -> Instruction {
+	Instruction::AllocateStack(self.offset)
+    }
+}
+
+fn gen_body(body: tacky::Instructions) -> Instructions {
+    let mut instructions = Instructions::new();
+    for inst in body.iter() {
+        match inst {
+            tacky::Instruction::Return(val) => {
+                let src = val_to_operand(val);
+                let dst = Operand::Register(Reg::Ax);
+                let mov = Instruction::Mov(src, dst);
+                let ret = Instruction::Ret;
+                instructions.push(mov);
+                instructions.push(ret);
+                
+            }
+            tacky::Instruction::Unary(op, val1, val2) => {
+                let src = val_to_operand(val1);
+                let dst = val_to_operand(val2);
+                let op = unary_from_tacky(op);
+                let mov = Instruction::Mov(src, dst.clone());
+                let unary = Instruction::Unary(op, dst);
+                instructions.push(mov);
+                instructions.push(unary);
+            }
+        }
+    }       
+    
+    //* STACK ALLOCATION *//
+    let mut stack_allocator = StackAllocator::new();
+
+    for inst in instructions.iter_mut() {
+	match inst {
+	    Instruction::Unary(op, operand) => {
+		let operand = stack_allocator.allocate_if_pseudo(operand.clone());
+		*inst = Instruction::Unary(*op, operand);
+	    }
+	    Instruction::Mov(src, dst) => {
+		let src = stack_allocator.allocate_if_pseudo(src.clone());
+		let dst = stack_allocator.allocate_if_pseudo(dst.clone());
+		*inst = Instruction::Mov(src, dst);
+	    }
+	    _ => ()
+	}
+    }
+
+    //* Fix instructions where src and dst are Stack(n) *//
+    let indexes: Vec<_> = instructions
+	.iter()
+	.enumerate()
+	.filter(|(_, i)| i.stack_operands())
+	.map(|(i,_)| i).collect();
+    let mut count = 0;
+    for i in indexes {
+	let instruction = instructions.remove(i + count);
+	let (src, dst) = match instruction {
+	    Instruction::Mov(o1, o2) => (o1, o2),
+	    _ => unreachable!()
+	};
+	let temp_reg = Reg::R10;
+	let mov1 = Instruction::Mov(src, Operand::Register(temp_reg));
+	let mov2 = Instruction::Mov(Operand::Register(temp_reg), dst);
+	
+	instructions.insert(i + count, mov1);
+	count += 1;
+	instructions.insert(i + count, mov2);
+    }
+    let prologue = stack_allocator.get_prologue();
+    instructions.insert(0, prologue);
+    instructions
+}
+
+fn gen_fundef(f: tacky::FunDef) -> Function {
+    match f {
+        tacky::FunDef::Function(name, body) => Function {
+            name,
+            body: gen_body(body),
+        }
+    }
+}
+
+pub fn codegen(ast: tacky::TackyAst) -> Program {
     match ast {
-        parser::Program::FunDef(f) => Program::Program(gen_fundef(f))
+        tacky::TackyAst::Program(f) => Program::Program(gen_fundef(f)),
     }
 }

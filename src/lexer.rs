@@ -18,14 +18,14 @@ pub enum Token {
     CloseCurly,
     Tilde,
     Hyphen,
-    Decrement
+    Decrement,
 }
 
 #[derive(Debug)]
 pub enum LexError {
     UnexpectedChar(char),
     UnknownMcharOperator(String),
-    BadConstant(String)
+    BadConstant(String),
 }
 
 impl error::Error for LexError {}
@@ -34,7 +34,7 @@ impl fmt::Display for LexError {
         match self {
             Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
             Self::UnknownMcharOperator(s) => write!(f, "Unknown multi-character operator: {s}"),
-            Self::BadConstant(s) => write!(f, "Bad constant: {s}")
+            Self::BadConstant(s) => write!(f, "Bad constant: {s}"),
         }
     }
 }
@@ -43,7 +43,7 @@ impl Token {
     fn from_mchoperator(s: String) -> Result<Token, LexError> {
         match s.as_str() {
             "--" => Ok(Self::Decrement),
-            _ => Err(LexError::UnknownMcharOperator(s))
+            _ => Err(LexError::UnknownMcharOperator(s)),
         }
     }
 }
@@ -70,7 +70,7 @@ impl From<String> for Token {
             "int" => Self::Int,
             "return" => Self::Return,
             "void" => Self::Void,
-            _ => Self::Identifier(s)
+            _ => Self::Identifier(s),
         }
     }
 }
@@ -80,8 +80,8 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
     if input.is_empty() {
         return Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first));
     }
-    match (first,input[0]) {
-        ('-','-') => Token::from_mchoperator(String::from("--")),
+    match (first, input[0]) {
+        ('-', '-') => Token::from_mchoperator(String::from("--")),
         _ => Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first)),
     }
 }
@@ -96,7 +96,7 @@ fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
     if !input.is_empty() {
         match input[0] {
             'a'..='z' | 'A'..='Z' | '_' => return Err(LexError::UnexpectedChar(input[0])),
-            _ => ()
+            _ => (),
         }
     }
 
@@ -117,7 +117,7 @@ fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
 pub fn lex(input: String) -> Result<Tokens, LexError> {
     let mut tokens = Vec::new();
     let mut input: Input = input.chars().collect();
-    
+
     while !input.is_empty() {
         match input[0] {
             ';' | '{' | '}' | '(' | ')' | '~' => {
@@ -139,8 +139,8 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
             }
             c if c.is_whitespace() => {
                 input.pop_front();
-            },
-            _ => return Err(LexError::UnexpectedChar(input[0]))
+            }
+            _ => return Err(LexError::UnexpectedChar(input[0])),
         }
     }
     Ok(tokens)
