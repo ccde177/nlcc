@@ -3,6 +3,7 @@ use crate::tacky;
 use std::collections::HashMap;
 use std::fmt;
 
+#[derive(Debug)]
 pub enum Program {
     Program(Function),
 }
@@ -10,11 +11,13 @@ pub enum Program {
 type Identifier = String;
 type Instructions = Vec<Instruction>;
 
+#[derive(Debug)]
 pub struct Function {
     name: String,
     body: Instructions,
 }
 
+#[derive(Debug)]
 pub enum Instruction {
     AllocateStack(u64),
     Mov(Operand, Operand),
@@ -33,13 +36,13 @@ impl Instruction {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum UnaryOp {
     Neg,
     Not
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Operand {
     Imm(u64),
     Register(Reg),
@@ -56,27 +59,49 @@ impl Operand {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Reg {
     Ax,
     R10
+}
+
+impl fmt::Display for Reg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	match self {
+	    Self::Ax => write!(f, "%eax"),
+	    Self::R10 => write!(f, "%r10d"),
+	}
+    }
 }
 
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Imm(i) => write!(f, "${i}"),
-            Self::Register(_r) => write!(f, "%eax"),
-	    _ => unimplemented!()
+            Self::Register(r) => write!(f, "{r}"),
+	    Self::Stack(i) => write!(f, "{i}(%rbp)"),
+	    _ => unreachable!()
         }
+    }
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	match self {
+	    Self::Neg => write!(f, "negl"),
+	    Self::Not => write!(f, "notl"),
+	}
     }
 }
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+	    Self::AllocateStack(i) => write!(f, "subq ${i}, %rsp"),
+	    Self::Unary(op, operand) => write!(f, "{op} {operand}"),
             Self::Mov(o1, o2) => write!(f, "movl {o1}, {o2}"),
-            Self::Ret => write!(f, "ret"),
+            Self::Ret => write!(f, "movq %rbp, %rsp\n\tpopq %rbp\n\tret"),
+	    
 	    _ => unimplemented!()
         }
     }
@@ -99,6 +124,9 @@ impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "\t.globl {}", self.name)?;
         writeln!(f, "{}:", self.name)?;
+	//Prologue:
+	writeln!(f, "\tpushq %rbp")?;
+	writeln!(f, "\tmovq %rsp, %rbp")?;
         for instruction in self.body.iter() {
             writeln!(f, "\t{instruction}")?;
         }
@@ -159,8 +187,8 @@ impl StackAllocator {
 	    return *self.map.get(name).unwrap();
 	}
 	self.offset += 4;
-	self.map.insert(name.clone(), self.offset);
-	self.offset
+	self.map.insert(name.clone(), self.offset - 4);
+	self.offset - 4
     }
 
     fn get_prologue(&self) -> Instruction {

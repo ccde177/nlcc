@@ -19,6 +19,11 @@ pub enum Token {
     Tilde,
     Hyphen,
     Decrement,
+    Plus,
+    Asterisk,
+    FSlash,
+    Percent,
+    Increment,
 }
 
 #[derive(Debug)]
@@ -43,6 +48,7 @@ impl Token {
     fn from_mchoperator(s: String) -> Result<Token, LexError> {
         match s.as_str() {
             "--" => Ok(Self::Decrement),
+            "++" => Ok(Self::Increment),
             _ => Err(LexError::UnknownMcharOperator(s)),
         }
     }
@@ -59,6 +65,10 @@ impl TryFrom<char> for Token {
             '}' => Ok(Self::CloseCurly),
             '-' => Ok(Self::Hyphen),
             '~' => Ok(Self::Tilde),
+            '+' => Ok(Self::Plus),
+            '%' => Ok(Self::Percent),
+            '*' => Ok(Self::Asterisk),
+            '/' => Ok(Self::FSlash),
             _ => Err("Not a special character"),
         }
     }
@@ -82,6 +92,7 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
     }
     match (first, input[0]) {
         ('-', '-') => Token::from_mchoperator(String::from("--")),
+        ('+', '+') => Token::from_mchoperator(String::from("++")),
         _ => Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first)),
     }
 }
@@ -120,12 +131,12 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
 
     while !input.is_empty() {
         match input[0] {
-            ';' | '{' | '}' | '(' | ')' | '~' => {
+            ';' | '{' | '}' | '(' | ')' | '~' | '%' | '*' | '/' => {
                 let token = Token::try_from(input[0]).expect("Should never fail");
                 tokens.push(token);
                 let _ = input.pop_front();
             }
-            '-' => {
+            '-' | '+' => {
                 let token = lex_mcharoperator(&mut input)?;
                 tokens.push(token);
             }

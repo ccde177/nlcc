@@ -66,6 +66,7 @@ fn main() -> anyhow::Result<()> {
     let asm = codegen::codegen(tacky);
 
     if args.codegen {
+	println!("{asm:?}");
         return Ok(());
     }
     
