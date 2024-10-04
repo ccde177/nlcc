@@ -52,6 +52,28 @@ impl Token {
             _ => Err(LexError::UnknownMcharOperator(s)),
         }
     }
+
+    pub fn is_binary(&self) -> bool {
+	match self {
+	    Self::Plus => true,
+	    Self::Asterisk => true,
+	    Self::Hyphen => true,
+	    Self::Percent => true,
+	    Self::FSlash => true,
+	    _ => false
+	}
+    }
+
+    pub fn get_prec(&self) -> u64 {
+	match self {
+	    Self::Plus => 45,
+	    Self::Asterisk => 50,
+	    Self::Hyphen => 45,
+	    Self::Percent => 50,
+	    Self::FSlash => 50,
+	    _ => 0
+	}
+    }
 }
 
 impl TryFrom<char> for Token {

@@ -20,9 +20,25 @@ pub enum Statement {
 }
 
 #[derive(Clone)]
-pub enum Expression {
+pub enum Factor {
     Constant(u64),
-    Unary(UnaryOperator, Box<Expression>),
+    Unary(UnaryOperator, Box<Factor>),
+    Nested(Box<Expression>)
+}
+
+#[derive(Clone)]
+pub enum Expression {
+    Factor(Box<Factor>),
+    BinaryExpr(Box<Expression>, BinaryOp, Box<Expression>)
+}
+
+#[derive(Copy, Clone)]
+pub enum BinaryOp {
+    Plus,
+    Mul,
+    Div,
+    Mod,
+    Minus
 }
 
 #[derive(Clone)]
@@ -37,7 +53,7 @@ pub enum ParseError {
     ExpectedButGotNone(Token),
     MoreTokensThanExpected(Tokens),
     BadExpression(Token),
-    ExpectedConstant,
+    ExpectedExpression,
 }
 
 impl fmt::Display for ParseError {
@@ -48,7 +64,7 @@ impl fmt::Display for ParseError {
             }
             Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {:?} but got None", t),
             Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {:?}", ts),
-            Self::ExpectedConstant => write!(f, "Expected constant"),
+            Self::ExpectedExpression => write!(f, "Expected expression"),
             Self::BadExpression(t) => write!(f, "Bad expression starting with {:?}", t),
         }
     }
@@ -79,16 +95,6 @@ fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
     )
 }
 
-fn expect_constant(tokens: &mut Tokens) -> Result<u64, ParseError> {
-    tokens
-        .pop()
-        .and_then(|t| match t {
-            Token::Constant(i) => Some(i),
-            _ => None,
-        })
-        .ok_or(ParseError::ExpectedConstant)
-}
-
 fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
     if let Some(token) = take_token(tokens) {
         match token {
@@ -105,36 +111,74 @@ fn take_token(tokens: &mut Tokens) -> Option<Token> {
     tokens.pop()
 }
 
-fn parse_expresssion(tokens: &mut Tokens) -> Result<Expression, ParseError> {
-    if let Some(token) = tokens.last() {
-        match token {
-            Token::Constant(_) => {
-                let constant = expect_constant(tokens)?;
-                Ok(Expression::Constant(constant))
-            }
-            Token::Hyphen | Token::Tilde => {
-                let operator = parse_unary(tokens)?;
-                let inner_expression = Box::new(parse_expresssion(tokens)?);
-                Ok(Expression::Unary(operator, inner_expression))
-            }
-            Token::OpenParanth => {
-                take_token(tokens);
-                let inner_expression = parse_expresssion(tokens)?;
-                expect_token(tokens, Token::CloseParanth)?;
-                Ok(inner_expression)
-            }
-            _ => Err(ParseError::BadExpression(token.clone())),
-        }
-    } else {
-        //TODO:
-        //Make a propper error
-        Err(ParseError::ExpectedConstant)
+fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
+    if tokens.is_empty() {
+	return Err(ParseError::ExpectedExpression);
     }
+    let next_token = take_token(tokens).expect("Should never fail");
+
+    match next_token {
+	Token::Plus => Ok(BinaryOp::Plus),
+	Token::Hyphen => Ok(BinaryOp::Minus),
+	Token::FSlash => Ok(BinaryOp::Div),
+	Token::Percent => Ok(BinaryOp::Mod),
+	Token::Asterisk => Ok(BinaryOp::Mul),
+	_ => Err(ParseError::BadExpression(next_token.clone()))
+    }
+}
+
+fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseError> {
+    let mut left = Expression::Factor(Box::new(parse_factor(tokens)?));
+    dbg!("parse_exp called");
+    while !tokens.is_empty() {
+	let next_token = tokens.last().expect("Should never fail").clone();
+	let prec = next_token.get_prec();
+	dbg!(next_token.clone());
+	dbg!(next_token.is_binary());
+	if !(next_token.is_binary() && prec >= min_prec) {
+	    break;
+	}
+
+	let operator = parse_binop(tokens)?;
+	let right = parse_exp(tokens, next_token.get_prec() + 1)?;
+
+	left = Expression::BinaryExpr(Box::new(left), operator, Box::new(right));
+	
+    }
+    Ok(left)
+}
+
+fn parse_factor(tokens: &mut Tokens) -> Result<Factor, ParseError> {
+    if tokens.is_empty() {
+	return Err(ParseError::ExpectedExpression);
+    }
+    let next_token = tokens.last().expect("Should never fail");
+    
+    match next_token {
+	Token::Tilde | Token::Hyphen => {
+	    let operator = parse_unary(tokens)?;
+	    let inner_exp = Box::new(parse_factor(tokens)?);
+	    Ok(Factor::Unary(operator, inner_exp))
+	}
+	Token::OpenParanth => {
+	    take_token(tokens);
+	    let inner_exp = Box::new(parse_exp(tokens, 0)?);
+	    expect_token(tokens, Token::CloseParanth)?;
+	    Ok(Factor::Nested(inner_exp))
+	}
+	Token::Constant(i) => {
+	    let inner = *i;
+	    take_token(tokens);
+	    Ok(Factor::Constant(inner))
+	}
+	_ => Err(ParseError::BadExpression(next_token.clone()))
+    }
+    
 }
 
 fn parse_statement(tokens: &mut Tokens) -> Result<Statement, ParseError> {
     expect_token(tokens, Token::Return)?;
-    let exp = parse_expresssion(tokens)?;
+    let exp = parse_exp(tokens, 0)?;
     expect_token(tokens, Token::Semicolon)?;
     Ok(Statement::Return(exp))
 }
@@ -157,9 +201,11 @@ fn parse_function(tokens: &mut Tokens) -> Result<Function, ParseError> {
         })
     }
 }
+
 fn parse_program(tokens: &mut Tokens) -> Result<Program, ParseError> {
     Ok(Program::FunDef(parse_function(tokens)?))
 }
+
 pub fn parse(mut tokens: Tokens) -> Result<Program, ParseError> {
     tokens.reverse();
     Ok(parse_program(&mut tokens)?)
