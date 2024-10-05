@@ -196,7 +196,7 @@ impl StackAllocator {
     }
 }
 
-fn gen_body(body: tacky::Instructions) -> Instructions {
+fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
     let mut instructions = Instructions::new();
     for inst in body.iter() {
         match inst {
@@ -221,10 +221,11 @@ fn gen_body(body: tacky::Instructions) -> Instructions {
 	    _=> unimplemented!()
         }
     }       
-    
-    //* STACK ALLOCATION *//
-    let mut stack_allocator = StackAllocator::new();
+    instructions
+}
 
+fn allocate_stack(instructions: &mut Instructions) {
+    let mut stack_allocator = StackAllocator::new();
     for inst in instructions.iter_mut() {
 	match inst {
 	    Instruction::Unary(op, operand) => {
@@ -239,7 +240,11 @@ fn gen_body(body: tacky::Instructions) -> Instructions {
 	    _ => ()
 	}
     }
+    let prologue = stack_allocator.get_prologue();
+    instructions.insert(0, prologue);
+}
 
+fn replace_two_stack_operands(instructions: &mut Instructions) {    
     //* Fix instructions where src and dst are Stack(n) *//
     let indexes: Vec<_> = instructions
 	.iter()
@@ -261,8 +266,12 @@ fn gen_body(body: tacky::Instructions) -> Instructions {
 	count += 1;
 	instructions.insert(i + count, mov2);
     }
-    let prologue = stack_allocator.get_prologue();
-    instructions.insert(0, prologue);
+}
+
+fn gen_body(body: tacky::Instructions) -> Instructions {
+    let mut instructions = tacky_to_asm(body);
+    allocate_stack(&mut instructions);
+    replace_two_stack_operands(&mut instructions);
     instructions
 }
 
