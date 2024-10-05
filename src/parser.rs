@@ -19,26 +19,20 @@ pub enum Statement {
     Return(Expression),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Factor {
-    Constant(u64),
-    Unary(UnaryOperator, Box<Factor>),
-    Nested(Box<Expression>)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
-    Factor(Box<Factor>),
-    BinaryExpr(Box<Expression>, BinaryOp, Box<Expression>)
+    Binary(BinaryOp, Box<Expression>, Box<Expression>),
+    Unary(UnaryOperator, Box<Expression>),
+    Constant(u64)
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BinaryOp {
-    Plus,
-    Mul,
+    Add,
+    Multiply,
     Div,
     Mod,
-    Minus
+    Substract
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -47,7 +41,7 @@ pub enum UnaryOperator {
     Negate,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseError {
     ExpectedButGot(Token, Token),
     ExpectedButGotNone(Token),
@@ -118,24 +112,20 @@ fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
     let next_token = take_token(tokens).expect("Should never fail");
 
     match next_token {
-	Token::Plus => Ok(BinaryOp::Plus),
-	Token::Hyphen => Ok(BinaryOp::Minus),
+	Token::Plus => Ok(BinaryOp::Add),
+	Token::Hyphen => Ok(BinaryOp::Substract),
 	Token::FSlash => Ok(BinaryOp::Div),
 	Token::Percent => Ok(BinaryOp::Mod),
-	Token::Asterisk => Ok(BinaryOp::Mul),
+	Token::Asterisk => Ok(BinaryOp::Multiply),
 	_ => Err(ParseError::BadExpression(next_token.clone()))
     }
 }
 
 fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseError> {
-    dbg!("parse_exp called");
-    dbg!(tokens.clone());
-    let mut left = Expression::Factor(Box::new(parse_factor(tokens)?));
+    let mut left = parse_factor(tokens)?;
     while !tokens.is_empty() {
 	let next_token = tokens.front().expect("Should never fail").clone();
 	let prec = next_token.get_prec();
-	dbg!(next_token.clone());
-	dbg!(next_token.is_binary());
 	if !(next_token.is_binary() && prec >= min_prec) {
 	    break;
 	}
@@ -143,15 +133,13 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseErro
 	let operator = parse_binop(tokens)?;
 	let right = parse_exp(tokens, next_token.get_prec() + 1)?;
 
-	left = Expression::BinaryExpr(Box::new(left), operator, Box::new(right));
+	left = Expression::Binary(operator, Box::new(left), Box::new(right));
 	
     }
     Ok(left)
 }
 
-fn parse_factor(tokens: &mut Tokens) -> Result<Factor, ParseError> {
-    dbg!("parse_factor_called");
-    dbg!(tokens.clone());
+fn parse_factor(tokens: &mut Tokens) -> Result<Expression, ParseError> {
     if tokens.is_empty() {
 	return Err(ParseError::ExpectedExpression);
     }
@@ -161,18 +149,18 @@ fn parse_factor(tokens: &mut Tokens) -> Result<Factor, ParseError> {
 	Token::Tilde | Token::Hyphen => {
 	    let operator = parse_unary(tokens)?;
 	    let inner_exp = Box::new(parse_factor(tokens)?);
-	    Ok(Factor::Unary(operator, inner_exp))
+	    Ok(Expression::Unary(operator, inner_exp))
 	}
 	Token::OpenParanth => {
 	    take_token(tokens);
-	    let inner_exp = Box::new(parse_exp(tokens, 0)?);
+	    let inner_exp = parse_exp(tokens, 0)?;
 	    expect_token(tokens, Token::CloseParanth)?;
-	    Ok(Factor::Nested(inner_exp))
+	    Ok(inner_exp)
 	}
 	Token::Constant(i) => {
 	    let inner = *i;
 	    take_token(tokens);
-	    Ok(Factor::Constant(inner))
+	    Ok(Expression::Constant(inner))
 	}
 	_ => Err(ParseError::BadExpression(next_token.clone()))
     }
@@ -223,6 +211,19 @@ mod parser_tests {
 	let exp = String::from("1 * 2 - 3 * (4 + 5)");
 	let mut tokens = lexer::lex(exp).unwrap();
 	let parsed = parse_exp(&mut tokens, 0);
-	assert_eq!(Ok(Expression::Factor(Box::new(Factor::Constant(0)))), parsed);
+	let expected = Expression::Binary(
+	    BinaryOp::Substract,
+	    Box::new(Expression::Binary(BinaryOp::Multiply, Box::new(Expression::Constant(1)), Box::new(Expression::Constant(2)))),
+	    Box::new(Expression::Binary(
+		BinaryOp::Multiply,
+		Box::new(Expression::Constant(3)),
+		Box::new(Expression::Binary(
+		    BinaryOp::Add,
+		    Box::new(Expression::Constant(4)),
+		    Box::new(Expression::Constant(5))
+		))
+	    ))
+	);
+	assert_eq!(Ok(expected), parsed);
     }
 }
