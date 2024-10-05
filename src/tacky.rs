@@ -16,6 +16,7 @@ pub enum Instruction {
     Binary(BinaryOp, Value, Value, Value),
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BinaryOp {
     Add,
     Substract,
@@ -33,6 +34,16 @@ pub enum Value {
 pub enum UnaryOp {
     Complement,
     Negate,
+}
+
+impl BinaryOp {
+    pub fn is_div(&self) -> bool {
+	*self == BinaryOp::Divide
+    }
+
+    pub fn is_rem(&self) -> bool {
+	*self == BinaryOp::Reminder
+    }
 }
 
 struct NameGenerator {
