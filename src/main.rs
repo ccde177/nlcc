@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
     fs::remove_file(&preprocessed)?;
 
     if args.lex {
-        println!("{:?}", tokens);
+        dbg!(tokens);
         return Ok(());
     }
 

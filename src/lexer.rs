@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::{error, fmt};
 
-pub type Tokens = Vec<Token>;
+pub type Tokens = VecDeque<Token>;
 type Input = VecDeque<char>;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -148,27 +148,27 @@ fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
 }
 
 pub fn lex(input: String) -> Result<Tokens, LexError> {
-    let mut tokens = Vec::new();
+    let mut tokens = Tokens::new();
     let mut input: Input = input.chars().collect();
 
     while !input.is_empty() {
         match input[0] {
             ';' | '{' | '}' | '(' | ')' | '~' | '%' | '*' | '/' => {
                 let token = Token::try_from(input[0]).expect("Should never fail");
-                tokens.push(token);
+                tokens.push_back(token);
                 let _ = input.pop_front();
             }
             '-' | '+' => {
                 let token = lex_mcharoperator(&mut input)?;
-                tokens.push(token);
+                tokens.push_back(token);
             }
             'a'..='z' | 'A'..='Z' => {
                 let token = lex_identifier(&mut input)?;
-                tokens.push(token);
+                tokens.push_back(token);
             }
             '0'..='9' => {
                 let token = lex_constant(&mut input)?;
-                tokens.push(token);
+                tokens.push_back(token);
             }
             c if c.is_whitespace() => {
                 input.pop_front();

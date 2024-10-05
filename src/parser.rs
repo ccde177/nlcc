@@ -3,36 +3,36 @@ use std::fmt;
 
 type Identifier = String;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Program {
     FunDef(Function),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: Identifier,
     pub body: Statement,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Statement {
     Return(Expression),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Factor {
     Constant(u64),
     Unary(UnaryOperator, Box<Factor>),
     Nested(Box<Expression>)
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Factor(Box<Factor>),
     BinaryExpr(Box<Expression>, BinaryOp, Box<Expression>)
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BinaryOp {
     Plus,
     Mul,
@@ -41,13 +41,13 @@ pub enum BinaryOp {
     Minus
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum UnaryOperator {
     Complement,
     Negate,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ParseError {
     ExpectedButGot(Token, Token),
     ExpectedButGotNone(Token),
@@ -74,7 +74,7 @@ impl std::error::Error for ParseError {}
 
 fn expect_token(tokens: &mut Tokens, token: Token) -> Result<(), ParseError> {
     tokens
-        .pop()
+        .pop_front()
         .map_or(Err(ParseError::ExpectedButGotNone(token.clone())), |t| {
             if t == token {
                 Ok(())
@@ -86,7 +86,7 @@ fn expect_token(tokens: &mut Tokens, token: Token) -> Result<(), ParseError> {
 
 fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
     let dummy = Token::Identifier("".into());
-    tokens.pop().map_or(
+    tokens.pop_front().map_or(
         Err(ParseError::ExpectedButGotNone(dummy.clone())),
         |t| match t {
             Token::Identifier(i) => Ok(i),
@@ -108,7 +108,7 @@ fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
 }
 
 fn take_token(tokens: &mut Tokens) -> Option<Token> {
-    tokens.pop()
+    tokens.pop_front()
 }
 
 fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
@@ -128,10 +128,11 @@ fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
 }
 
 fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseError> {
-    let mut left = Expression::Factor(Box::new(parse_factor(tokens)?));
     dbg!("parse_exp called");
+    dbg!(tokens.clone());
+    let mut left = Expression::Factor(Box::new(parse_factor(tokens)?));
     while !tokens.is_empty() {
-	let next_token = tokens.last().expect("Should never fail").clone();
+	let next_token = tokens.front().expect("Should never fail").clone();
 	let prec = next_token.get_prec();
 	dbg!(next_token.clone());
 	dbg!(next_token.is_binary());
@@ -149,10 +150,12 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseErro
 }
 
 fn parse_factor(tokens: &mut Tokens) -> Result<Factor, ParseError> {
+    dbg!("parse_factor_called");
+    dbg!(tokens.clone());
     if tokens.is_empty() {
 	return Err(ParseError::ExpectedExpression);
     }
-    let next_token = tokens.last().expect("Should never fail");
+    let next_token = tokens.front().expect("Should never fail");
     
     match next_token {
 	Token::Tilde | Token::Hyphen => {
@@ -207,6 +210,19 @@ fn parse_program(tokens: &mut Tokens) -> Result<Program, ParseError> {
 }
 
 pub fn parse(mut tokens: Tokens) -> Result<Program, ParseError> {
-    tokens.reverse();
     Ok(parse_program(&mut tokens)?)
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::*;
+    use crate::lexer;
+
+    #[test]
+    fn test_expression_precedense_1() {
+	let exp = String::from("1 * 2 - 3 * (4 + 5)");
+	let mut tokens = lexer::lex(exp).unwrap();
+	let parsed = parse_exp(&mut tokens, 0);
+	assert_eq!(Ok(Expression::Factor(Box::new(Factor::Constant(0)))), parsed);
+    }
 }
