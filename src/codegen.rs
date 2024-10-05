@@ -218,6 +218,7 @@ fn gen_body(body: tacky::Instructions) -> Instructions {
                 instructions.push(mov);
                 instructions.push(unary);
             }
+	    _=> unimplemented!()
         }
     }       
     
