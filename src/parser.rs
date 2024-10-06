@@ -213,7 +213,11 @@ mod parser_tests {
 	let parsed = parse_exp(&mut tokens, 0);
 	let expected = Expression::Binary(
 	    BinaryOp::Substract,
-	    Box::new(Expression::Binary(BinaryOp::Multiply, Box::new(Expression::Constant(1)), Box::new(Expression::Constant(2)))),
+	    Box::new(Expression::Binary(
+                BinaryOp::Multiply,
+                Box::new(Expression::Constant(1)),
+                Box::new(Expression::Constant(2)))
+            ),
 	    Box::new(Expression::Binary(
 		BinaryOp::Multiply,
 		Box::new(Expression::Constant(3)),

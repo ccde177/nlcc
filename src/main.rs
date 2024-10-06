@@ -7,6 +7,7 @@ mod codegen;
 mod lexer;
 mod parser;
 mod tacky;
+mod emission;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
