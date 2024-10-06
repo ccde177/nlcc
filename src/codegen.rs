@@ -35,12 +35,12 @@ pub enum BinaryOp {
 }
 
 impl Instruction {
-    fn stack_operands(&self) -> bool {
+    fn mem_operands(&self) -> bool {
         match self {
-            Self::Mov(src, dst) => src.is_stack() && dst.is_stack(),
+            Self::Mov(src, dst) => src.is_mem() && dst.is_mem(),
 	    Self::Binary(op, src, dst) => {
 		(*op == BinaryOp::Add || *op == BinaryOp::Sub)
-		    && src.is_stack() && dst.is_stack()
+		    && src.is_mem() && dst.is_mem()
 	    }
             _ => false,
         }
@@ -49,7 +49,7 @@ impl Instruction {
     fn is_mul_sndmem(&self) -> bool {
 	match self {
 	    Instruction::Binary(op, _, operand) => {
-		*op == BinaryOp::Imul && operand.is_stack()
+		*op == BinaryOp::Imul && operand.is_mem()
 	    }
 	    _ => false
 	}
@@ -78,12 +78,13 @@ pub enum Operand {
 }
 
 impl Operand {
-    fn is_stack(&self) -> bool {
+    fn is_mem(&self) -> bool {
         match self {
             Self::Stack(_) => true,
             _ => false,
         }
     }
+    
     fn is_imm(&self) -> bool {
 	match self {
 	    Self::Imm(_) => true,
@@ -229,45 +230,38 @@ fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
 }
 
 fn allocate_stack(instructions: &mut Instructions) {
-    let mut stack_allocator = StackAllocator::new();
+    let mut sa = StackAllocator::new();
     for inst in instructions.iter_mut() {
         match inst {
             Instruction::Unary(op, operand) => {
-                let operand = stack_allocator.allocate_if_pseudo(operand.clone());
+                let operand = sa.allocate_if_pseudo(operand.clone());
                 *inst = Instruction::Unary(*op, operand);
             }
             Instruction::Mov(src, dst) => {
-                let src = stack_allocator.allocate_if_pseudo(src.clone());
-                let dst = stack_allocator.allocate_if_pseudo(dst.clone());
+                let src = sa.allocate_if_pseudo(src.clone());
+                let dst = sa.allocate_if_pseudo(dst.clone());
                 *inst = Instruction::Mov(src, dst);
             }
 	    Instruction::Binary(op, operand1, operand2) => {
-		let operand1 = stack_allocator.allocate_if_pseudo(operand1.clone());
-		let operand2 = stack_allocator.allocate_if_pseudo(operand2.clone());
+		let operand1 = sa.allocate_if_pseudo(operand1.clone());
+		let operand2 = sa.allocate_if_pseudo(operand2.clone());
 		*inst = Instruction::Binary(*op, operand1, operand2);
 	    }
 	    Instruction::Idiv(operand) => {
-		let operand = stack_allocator.allocate_if_pseudo(operand.clone());
+		let operand = sa.allocate_if_pseudo(operand.clone());
 		*inst = Instruction::Idiv(operand);
 	    }
             _ => (),
         }
     }
-    let prologue = stack_allocator.get_prologue();
+    let prologue = sa.get_prologue();
     instructions.insert(0, prologue);
 }
 
-fn fix_imul(instructions: &mut Instructions) {
-    let indexes: Vec<_> = instructions
-        .iter()
-        .enumerate()
-        .filter(|(_, i)| i.is_mul_sndmem())
-        .map(|(i, _)| i)
-        .collect();
-    let mut count = 0;
-    for i in indexes {
-	let instruction = instructions.remove(i + count);
-	let (op, src, dst) = match instruction {
+fn fix_imul(instruction: Instruction) -> Instructions {
+    let mut result = Instructions::new();
+    if instruction.is_mul_sndmem() {
+       	let (op, src, dst) = match instruction {
 	    Instruction::Binary(op, src, dst) => (op, src, dst),
 	    _ => unreachable!()
 	};
@@ -275,50 +269,32 @@ fn fix_imul(instructions: &mut Instructions) {
 	let mov1 = Instruction::Mov(dst.clone(), Operand::Reg(temp_reg));
 	let imul = Instruction::Binary(op, src, Operand::Reg(temp_reg));
 	let mov2 = Instruction::Mov(Operand::Reg(temp_reg), dst);
-	
-	instructions.insert(i + count, mov1);
-	count += 1;
-	instructions.insert(i + count, imul);
-	count += 1;
-	instructions.insert(i + count, mov2);
+        result.push(mov1);
+        result.push(imul);
+        result.push(mov2);
     }
+    result
 }
 
-fn fix_idiv(instructions: &mut Instructions) {
-    let indexes:Vec<_> = instructions
-	.iter()
-	.enumerate()
-        .filter(|(_, i)| i.is_idiv_constant())
-        .map(|(i, _)| i)
-        .collect();
-
-    let mut count = 0;
-    for i in indexes {
-	let instruction = instructions.remove(i + count);
-	let operand = match instruction {
+fn fix_idiv(instruction: Instruction) -> Instructions {
+    let mut result = Instructions::new();
+    if instruction.is_idiv_constant() {
+       	let operand = match instruction {
 	    Instruction::Idiv(operand) => operand,
 	    _ => unreachable!(),
 	};
 	let temp_reg = Register::R10;
 	let mov1 = Instruction::Mov(operand, Operand::Reg(temp_reg));
 	let idiv = Instruction::Idiv(Operand::Reg(temp_reg));
-	instructions.insert(i + count, mov1);
-	count += 1;
-	instructions.insert(i + count, idiv);
+        result.push(mov1);
+        result.push(idiv);
     }
+    result
 }
 
-fn replace_two_stack_operands(instructions: &mut Instructions) {
-    //* Fix instructions where src and dst are Stack(n) *//
-    let indexes: Vec<_> = instructions
-        .iter()
-        .enumerate()
-        .filter(|(_, i)| i.stack_operands())
-        .map(|(i, _)| i)
-        .collect();
-    let mut count = 0;
-    for i in indexes {
-        let instruction = instructions.remove(i + count);
+fn fix_two_memoperands(instruction: Instruction) -> Instructions {
+    let mut result = Instructions::new();
+    if instruction.mem_operands() {
         let (src, dst) = match instruction {
             Instruction::Mov(ref o1, ref o2) => (o1, o2),
 	    Instruction::Binary(_, ref o1, ref o2) => (o1, o2),
@@ -331,19 +307,46 @@ fn replace_two_stack_operands(instructions: &mut Instructions) {
 	} else {
 	    Instruction::Mov(Operand::Reg(temp_reg), dst.clone())
 	};
+        result.push(mov1);
+        result.push(snd);
+    }
+    result
+}
 
-        instructions.insert(i + count, mov1);
-        count += 1;
-        instructions.insert(i + count, snd);
+fn fix_instructions(instructions: &mut Instructions) {
+    let indexes: Vec<_> = instructions
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.mem_operands() || i.is_mul_sndmem() || i.is_idiv_constant())
+        .map(|(i, _)| i)
+        .collect();
+
+    let mut count = 0;
+    for i in indexes {
+        let instr = instructions.remove(i + count);
+        
+        let fixed = if instr.mem_operands() {
+            fix_two_memoperands(instr)
+        } else if instr.is_mul_sndmem() {
+            fix_imul(instr)
+        } else if instr.is_idiv_constant() {
+            fix_idiv(instr)
+        } else {
+            unreachable!()
+        };
+        
+        for instr in fixed.into_iter() {
+            instructions.insert(i + count, instr);
+            count += 1;
+        }
+        count -= 1;
     }
 }
 
 fn gen_body(body: tacky::Instructions) -> Instructions {
     let mut instructions = tacky_to_asm(body);
     allocate_stack(&mut instructions);
-    replace_two_stack_operands(&mut instructions);
-    fix_idiv(&mut instructions);
-    fix_imul(&mut instructions);
+    fix_instructions(&mut instructions);
     instructions
 }
 
