@@ -99,8 +99,6 @@ fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
 }
 
 fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
-    dbg!("parse_unary");
-    dbg!(tokens[0].clone());
     if let Some(token) = take_token(tokens) {
         match token {
             Token::Hyphen => Ok(UnaryOperator::Negate),
@@ -118,8 +116,6 @@ fn take_token(tokens: &mut Tokens) -> Option<Token> {
 }
 
 fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
-    dbg!("parse_binop");
-    dbg!(tokens[0].clone());
     if tokens.is_empty() {
         return Err(ParseError::ExpectedExpression);
     }
@@ -182,8 +178,6 @@ fn get_prec(token: &Token) -> u64 {
 }
 
 fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseError> {
-    dbg!("parse_exp");
-    dbg!(tokens.clone());
     let mut left = parse_factor(tokens)?;
     while !tokens.is_empty() {
         let next_token = tokens.front().expect("Should never fail").clone();
@@ -201,8 +195,6 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseErro
 }
 
 fn parse_factor(tokens: &mut Tokens) -> Result<Expression, ParseError> {
-    dbg!("parse_factor");
-    dbg!(tokens.clone());
     if tokens.is_empty() {
         return Err(ParseError::ExpectedExpression);
     }
@@ -260,7 +252,6 @@ fn parse_program(tokens: &mut Tokens) -> Result<Program, ParseError> {
 }
 
 pub fn parse(mut tokens: Tokens) -> Result<Program, ParseError> {
-    dbg!(tokens.clone());
     Ok(parse_program(&mut tokens)?)
 }
 
