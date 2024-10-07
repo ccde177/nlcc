@@ -24,12 +24,20 @@ pub enum Token {
     FSlash,
     Percent,
     Increment,
+    LogicalNot,
+    LogicalAnd,
+    LogicalOr,
+    IsEqual,
+    IsNotEqual,
+    IsLessThan,
+    IsGreaterThan,
+    IsLessThanOrEqual,
+    IsGreaterThanOrEqual,
 }
 
 #[derive(Debug)]
 pub enum LexError {
     UnexpectedChar(char),
-    UnknownMcharOperator(String),
     BadConstant(String),
 }
 
@@ -38,41 +46,32 @@ impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
-            Self::UnknownMcharOperator(s) => write!(f, "Unknown multi-character operator: {s}"),
             Self::BadConstant(s) => write!(f, "Bad constant: {s}"),
         }
     }
 }
 
 impl Token {
-    fn from_mchoperator(s: String) -> Result<Token, LexError> {
-        match s.as_str() {
-            "--" => Ok(Self::Decrement),
-            "++" => Ok(Self::Increment),
-            _ => Err(LexError::UnknownMcharOperator(s)),
+    pub fn is_binary(&self) -> bool {
+        match self {
+            Self::Plus => true,
+            Self::Asterisk => true,
+            Self::Hyphen => true,
+            Self::Percent => true,
+            Self::FSlash => true,
+            _ => false,
         }
     }
 
-    pub fn is_binary(&self) -> bool {
-	match self {
-	    Self::Plus => true,
-	    Self::Asterisk => true,
-	    Self::Hyphen => true,
-	    Self::Percent => true,
-	    Self::FSlash => true,
-	    _ => false
-	}
-    }
-
     pub fn get_prec(&self) -> u64 {
-	match self {
-	    Self::Plus => 45,
-	    Self::Asterisk => 50,
-	    Self::Hyphen => 45,
-	    Self::Percent => 50,
-	    Self::FSlash => 50,
-	    _ => 0
-	}
+        match self {
+            Self::Plus => 45,
+            Self::Asterisk => 50,
+            Self::Hyphen => 45,
+            Self::Percent => 50,
+            Self::FSlash => 50,
+            _ => 0,
+        }
     }
 }
 
@@ -91,6 +90,9 @@ impl TryFrom<char> for Token {
             '%' => Ok(Self::Percent),
             '*' => Ok(Self::Asterisk),
             '/' => Ok(Self::FSlash),
+            '!' => Ok(Self::LogicalNot),
+            '<' => Ok(Self::IsLessThan),
+            '>' => Ok(Self::IsGreaterThan),
             _ => Err("Not a special character"),
         }
     }
@@ -109,14 +111,27 @@ impl From<String> for Token {
 
 fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
     let first = input.pop_front().expect("Should never fail");
+
     if input.is_empty() {
         return Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first));
     }
-    match (first, input[0]) {
-        ('-', '-') => Token::from_mchoperator(String::from("--")),
-        ('+', '+') => Token::from_mchoperator(String::from("++")),
+
+    let result = match (first, input[0]) {
+        ('-', '-') => Ok(Token::Decrement),
+        ('+', '+') => Ok(Token::Increment),
+        ('|', '|') => Ok(Token::LogicalOr),
+        ('&', '&') => Ok(Token::LogicalAnd),
+        ('=', '=') => Ok(Token::IsEqual),
+        ('!', '=') => Ok(Token::IsNotEqual),
+        ('>', '=') => Ok(Token::IsGreaterThanOrEqual),
+        ('<', '=') => Ok(Token::IsLessThanOrEqual),
         _ => Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first)),
+    };
+    
+    if let Ok(_) = result {
+        input.pop_front();
     }
+    result
 }
 
 fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
@@ -158,7 +173,7 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
                 tokens.push_back(token);
                 let _ = input.pop_front();
             }
-            '-' | '+' => {
+            '-' | '+' | '=' | '!' | '>' | '<' | '|' | '&' => {
                 let token = lex_mcharoperator(&mut input)?;
                 tokens.push_back(token);
             }
