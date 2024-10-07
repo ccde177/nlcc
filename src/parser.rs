@@ -145,19 +145,19 @@ fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
 
 fn token_is_binaryop(token: &Token) -> bool {
     match token {
-        &Token::Plus
-        | &Token::Hyphen
-        | &Token::Asterisk
-        | &Token::FSlash
-        | &Token::Percent
-        | &Token::LogicalAnd
-        | &Token::LogicalOr
-        | &Token::IsEqual
-        | &Token::IsNotEqual
-        | &Token::IsLessThan
-        | &Token::IsLessThanOrEqual
-        | &Token::IsGreaterThan
-        | &Token::IsGreaterThanOrEqual => true,
+        Token::Plus
+        | Token::Hyphen
+        | Token::Asterisk
+        | Token::FSlash
+        | Token::Percent
+        | Token::LogicalAnd
+        | Token::LogicalOr
+        | Token::IsEqual
+        | Token::IsNotEqual
+        | Token::IsLessThan
+        | Token::IsLessThanOrEqual
+        | Token::IsGreaterThan
+        | Token::IsGreaterThanOrEqual => true,
         _ => false,
     }
 }
