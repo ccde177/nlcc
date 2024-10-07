@@ -67,7 +67,22 @@ impl fmt::Display for Program {
     }
 }
 
+impl fmt::Display for Condition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::E => write!(f, "e"),
+            Self::NE => write!(f, "ne"),
+            Self::L => write!(f, "l"),
+            Self::LE => write!(f, "le"),
+            Self::G => write!(f, "g"),
+            Self::GE => write!(f, "ge"),
+        }
+    }
+}
+    
+
 impl fmt::Display for Instruction {
+    
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::AllocateStack(i) => write!(f, "subq ${i}, %rsp"),
@@ -77,6 +92,27 @@ impl fmt::Display for Instruction {
 	    Self::Idiv(op) => write!(f, "idivl {op}"),
 	    Self::Cdq => write!(f, "cdq"),
 	    Self::Binary(op, src, dst) => write!(f, "{op} {src}, {dst}"),
+            Self::Cmp(src, dst) => write!(f, "cmpl {src}, {dst}"),
+            Self::Jmp(label) => write!(f, "jmp .L{label}"),
+            Self::JmpCC(condition, label) => write!(f, "j{condition} .L{label}"),
+            Self::Label(label) => write!(f, ".L{label}:"),
+            Self::SetCC(cond_code, operand) => {
+                if operand.is_reg(){
+                    let reg = match operand {
+                        Operand::Reg(r) => r,
+                        _=> unreachable!()
+                    };
+                    let reg_str = match reg {
+                        Register::Ax => "al",
+                        Register::Dx => "dl",
+                        Register::R10 => "r10b",
+                        Register::R11 => "r11b",
+                    };
+                    write!(f, "set{cond_code} {reg_str}")
+                } else {
+                    write!(f, "set{cond_code} {operand}")
+                }
+            }
             _ => unimplemented!(),
         }
     }

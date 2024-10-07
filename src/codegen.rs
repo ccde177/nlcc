@@ -22,9 +22,24 @@ pub enum Instruction {
     Mov(Operand, Operand),
     Unary(UnaryOp, Operand),
     Binary(BinaryOp, Operand, Operand),
+    Cmp(Operand, Operand),
+    Jmp(Identifier),
+    JmpCC(Condition, Identifier),
+    SetCC(Condition, Operand),
+    Label(Identifier),
     Idiv(Operand),
     Cdq,
     Ret,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Condition {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -38,28 +53,33 @@ impl Instruction {
     fn mem_operands(&self) -> bool {
         match self {
             Self::Mov(src, dst) => src.is_mem() && dst.is_mem(),
-	    Self::Binary(op, src, dst) => {
-		(*op == BinaryOp::Add || *op == BinaryOp::Sub)
-		    && src.is_mem() && dst.is_mem()
-	    }
+            Self::Cmp(src, dst) => src.is_mem() && dst.is_mem(),
+            Self::Binary(op, src, dst) => {
+                (*op == BinaryOp::Add || *op == BinaryOp::Sub) && src.is_mem() && dst.is_mem()
+            }
+            _ => false,
+        }
+    }
+
+    fn is_cmp_sndimm(&self) -> bool {
+        match self {
+            Self::Cmp(_, dst) => dst.is_imm(),
             _ => false,
         }
     }
 
     fn is_mul_sndmem(&self) -> bool {
-	match self {
-	    Instruction::Binary(op, _, operand) => {
-		*op == BinaryOp::Imul && operand.is_mem()
-	    }
-	    _ => false
-	}
+        match self {
+            Instruction::Binary(op, _, operand) => *op == BinaryOp::Imul && operand.is_mem(),
+            _ => false,
+        }
     }
 
     fn is_idiv_constant(&self) -> bool {
-	match self {
-	    Instruction::Idiv(c) => c.is_imm(),
-	    _ => false,
-	}
+        match self {
+            Instruction::Idiv(c) => c.is_imm(),
+            _ => false,
+        }
     }
 }
 
@@ -84,12 +104,19 @@ impl Operand {
             _ => false,
         }
     }
-    
+
+    pub fn is_reg(&self) -> bool {
+        match self {
+            Self::Reg(_) => true,
+            _ => false
+        }
+    }
+
     fn is_imm(&self) -> bool {
-	match self {
-	    Self::Imm(_) => true,
-	    _ => false,
-	}
+        match self {
+            Self::Imm(_) => true,
+            _ => false,
+        }
     }
 }
 
@@ -112,6 +139,7 @@ fn unary_from_tacky(op: &tacky::UnaryOp) -> UnaryOp {
     match op {
         tacky::UnaryOp::Complement => UnaryOp::Not,
         tacky::UnaryOp::Negate => UnaryOp::Neg,
+        _ => unimplemented!(),
     }
 }
 
@@ -146,7 +174,7 @@ impl StackAllocator {
         }
         self.offset += 4;
         self.map.insert(name.clone(), self.offset);
-	self.offset
+        self.offset
     }
 
     fn get_prologue(&self) -> Instruction {
@@ -156,46 +184,76 @@ impl StackAllocator {
 
 impl From<tacky::BinaryOp> for BinaryOp {
     fn from(value: tacky::BinaryOp) -> Self {
-	match value {
-	    tacky::BinaryOp::Add => BinaryOp::Add,
-	    tacky::BinaryOp::Multiply => BinaryOp::Imul,
-	    tacky::BinaryOp::Substract => BinaryOp::Sub,
-	    _ => unimplemented!()
-	}
+        match value {
+            tacky::BinaryOp::Add => BinaryOp::Add,
+            tacky::BinaryOp::Multiply => BinaryOp::Imul,
+            tacky::BinaryOp::Substract => BinaryOp::Sub,
+            _ => unimplemented!(),
+        }
     }
 }
 
 fn tbinary_to_asm(instructions: &mut Instructions, tinstr: tacky::Instruction) {
     if let tacky::Instruction::Binary(op, val1, val2, val3) = tinstr {
-	let src1 = val_to_operand(&val1);
-	let src2 = val_to_operand(&val2);
-	let dst = val_to_operand(&val3);
+        let src1 = val_to_operand(&val1);
+        let src2 = val_to_operand(&val2);
+        let dst = val_to_operand(&val3);
 
-	let is_div = op.is_div();
-	let is_rem = op.is_rem();
-	
-	if is_div || is_rem {
-	    let ax = Operand::Reg(Register::Ax);
-	    let dx = Operand::Reg(Register::Dx);
-	    let mov1 = Instruction::Mov(src1, ax.clone());
-	    let cdq = Instruction::Cdq;
-	    let idiv = Instruction::Idiv(src2);
-	    let last = if is_rem { dx } else { ax };
-	    let mov2 = Instruction::Mov(last, dst);
+        let is_div = op.is_div();
+        let is_rem = op.is_rem();
 
-	    instructions.push(mov1);
-	    instructions.push(cdq);
-	    instructions.push(idiv);
-	    instructions.push(mov2);
-	    
-	} else {
-	    let op = BinaryOp::from(op);
-	    let mov = Instruction::Mov(src1, dst.clone());
-	    let operation = Instruction::Binary(op, src2, dst);
-	    
-	    instructions.push(mov);
-	    instructions.push(operation);
-	}
+        if is_div || is_rem {
+            let ax = Operand::Reg(Register::Ax);
+            let dx = Operand::Reg(Register::Dx);
+            let mov1 = Instruction::Mov(src1, ax.clone());
+            let cdq = Instruction::Cdq;
+            let idiv = Instruction::Idiv(src2);
+            let last = if is_rem { dx } else { ax };
+            let mov2 = Instruction::Mov(last, dst);
+
+            instructions.push(mov1);
+            instructions.push(cdq);
+            instructions.push(idiv);
+            instructions.push(mov2);
+        } else {
+            let op = BinaryOp::from(op);
+            let mov = Instruction::Mov(src1, dst.clone());
+            let operation = Instruction::Binary(op, src2, dst);
+
+            instructions.push(mov);
+            instructions.push(operation);
+        }
+    }
+}
+
+impl From<tacky::BinaryOp> for Condition {
+    fn from(value: tacky::BinaryOp) -> Self {
+        match value {
+            tacky::BinaryOp::IsGreaterThan => Self::G,
+            tacky::BinaryOp::IsGreaterOrEqual => Self::GE,
+            tacky::BinaryOp::IsEqual => Self::E,
+            tacky::BinaryOp::IsNotEqual => Self::NE,
+            tacky::BinaryOp::IsLessThan => Self::L,
+            tacky::BinaryOp::IsLessOrEqual => Self::LE,
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn tcomp_to_asm(instructions: &mut Instructions, instr: tacky::Instruction) {
+    match instr {
+        tacky::Instruction::Binary(op, src1, src2, dst) => {
+            let src1 = val_to_operand(&src1);
+            let src2 = val_to_operand(&src2);
+            let dst = val_to_operand(&dst);
+            let cmp = Instruction::Cmp(src2, src1);
+            let mov = Instruction::Mov(Operand::Imm(0), dst.clone());
+            let setcc = Instruction::SetCC(Condition::from(op), dst);
+            instructions.push(cmp);
+            instructions.push(mov);
+            instructions.push(setcc);
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -211,6 +269,16 @@ fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
                 instructions.push(mov);
                 instructions.push(ret);
             }
+            tacky::Instruction::Unary(tacky::UnaryOp::LogicalNot, src, dst) => {
+                let src = val_to_operand(&src);
+                let dst = val_to_operand(&dst);
+                let cmp = Instruction::Cmp(Operand::Imm(0), src);
+                let mov = Instruction::Mov(Operand::Imm(0), dst.clone());
+                let setcc = Instruction::SetCC(Condition::E, dst);
+                instructions.push(cmp);
+                instructions.push(mov);
+                instructions.push(setcc);
+            }
             tacky::Instruction::Unary(op, val1, val2) => {
                 let src = val_to_operand(&val1);
                 let dst = val_to_operand(&val2);
@@ -220,10 +288,39 @@ fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
                 instructions.push(mov);
                 instructions.push(unary);
             }
-	    tacky::Instruction::Binary(_,_,_,_) => {
-		tbinary_to_asm(&mut instructions, inst);
-	    }
-            _ => unimplemented!(),
+            tacky::Instruction::Binary(op, _, _, _) => {
+                if op.is_comp() {
+                    tcomp_to_asm(&mut instructions, inst);
+                } else {
+                    tbinary_to_asm(&mut instructions, inst);
+                }
+            }
+            tacky::Instruction::JumpIfZero(val, target) => {
+                let src = val_to_operand(&val);
+                let cmp = Instruction::Cmp(Operand::Imm(0), src);
+                let jmp = Instruction::JmpCC(Condition::E, target);
+                instructions.push(cmp);
+                instructions.push(jmp);
+            }
+            tacky::Instruction::JumpIfNotZero(val, target) => {
+                let src = val_to_operand(&val);
+                let cmp = Instruction::Cmp(Operand::Imm(0), src);
+                let jmp = Instruction::JmpCC(Condition::NE, target);
+                instructions.push(cmp);
+                instructions.push(jmp);
+            }
+            tacky::Instruction::Copy(src, dst) => {
+                let src = val_to_operand(&src);
+                let dst = val_to_operand(&dst);
+                let mov = Instruction::Mov(src, dst);
+                instructions.push(mov);
+            }
+            tacky::Instruction::Label(id) => {
+                instructions.push(Instruction::Label(id));
+            }
+            tacky::Instruction::Jump(target) => {
+                instructions.push(Instruction::Jmp(target));
+            }
         }
     }
     instructions
@@ -233,6 +330,15 @@ fn allocate_stack(instructions: &mut Instructions) {
     let mut sa = StackAllocator::new();
     for inst in instructions.iter_mut() {
         match inst {
+            Instruction::SetCC(cond, operand) => {
+                let operand = sa.allocate_if_pseudo(operand.clone());
+                *inst = Instruction::SetCC(*cond, operand);
+            }
+            Instruction::Cmp(src, dst) => {
+                let src = sa.allocate_if_pseudo(src.clone());
+                let dst = sa.allocate_if_pseudo(dst.clone());
+                *inst = Instruction::Cmp(src, dst);
+            }
             Instruction::Unary(op, operand) => {
                 let operand = sa.allocate_if_pseudo(operand.clone());
                 *inst = Instruction::Unary(*op, operand);
@@ -242,15 +348,15 @@ fn allocate_stack(instructions: &mut Instructions) {
                 let dst = sa.allocate_if_pseudo(dst.clone());
                 *inst = Instruction::Mov(src, dst);
             }
-	    Instruction::Binary(op, operand1, operand2) => {
-		let operand1 = sa.allocate_if_pseudo(operand1.clone());
-		let operand2 = sa.allocate_if_pseudo(operand2.clone());
-		*inst = Instruction::Binary(*op, operand1, operand2);
-	    }
-	    Instruction::Idiv(operand) => {
-		let operand = sa.allocate_if_pseudo(operand.clone());
-		*inst = Instruction::Idiv(operand);
-	    }
+            Instruction::Binary(op, operand1, operand2) => {
+                let operand1 = sa.allocate_if_pseudo(operand1.clone());
+                let operand2 = sa.allocate_if_pseudo(operand2.clone());
+                *inst = Instruction::Binary(*op, operand1, operand2);
+            }
+            Instruction::Idiv(operand) => {
+                let operand = sa.allocate_if_pseudo(operand.clone());
+                *inst = Instruction::Idiv(operand);
+            }
             _ => (),
         }
     }
@@ -261,14 +367,14 @@ fn allocate_stack(instructions: &mut Instructions) {
 fn fix_imul(instruction: Instruction) -> Instructions {
     let mut result = Instructions::new();
     if instruction.is_mul_sndmem() {
-       	let (op, src, dst) = match instruction {
-	    Instruction::Binary(op, src, dst) => (op, src, dst),
-	    _ => unreachable!()
-	};
-	let temp_reg = Register::R11;
-	let mov1 = Instruction::Mov(dst.clone(), Operand::Reg(temp_reg));
-	let imul = Instruction::Binary(op, src, Operand::Reg(temp_reg));
-	let mov2 = Instruction::Mov(Operand::Reg(temp_reg), dst);
+        let (op, src, dst) = match instruction {
+            Instruction::Binary(op, src, dst) => (op, src, dst),
+            _ => unreachable!(),
+        };
+        let temp_reg = Register::R11;
+        let mov1 = Instruction::Mov(dst.clone(), Operand::Reg(temp_reg));
+        let imul = Instruction::Binary(op, src, Operand::Reg(temp_reg));
+        let mov2 = Instruction::Mov(Operand::Reg(temp_reg), dst);
         result.push(mov1);
         result.push(imul);
         result.push(mov2);
@@ -279,13 +385,13 @@ fn fix_imul(instruction: Instruction) -> Instructions {
 fn fix_idiv(instruction: Instruction) -> Instructions {
     let mut result = Instructions::new();
     if instruction.is_idiv_constant() {
-       	let operand = match instruction {
-	    Instruction::Idiv(operand) => operand,
-	    _ => unreachable!(),
-	};
-	let temp_reg = Register::R10;
-	let mov1 = Instruction::Mov(operand, Operand::Reg(temp_reg));
-	let idiv = Instruction::Idiv(Operand::Reg(temp_reg));
+        let operand = match instruction {
+            Instruction::Idiv(operand) => operand,
+            _ => unreachable!(),
+        };
+        let temp_reg = Register::R10;
+        let mov1 = Instruction::Mov(operand, Operand::Reg(temp_reg));
+        let idiv = Instruction::Idiv(Operand::Reg(temp_reg));
         result.push(mov1);
         result.push(idiv);
     }
@@ -297,18 +403,34 @@ fn fix_two_memoperands(instruction: Instruction) -> Instructions {
     if instruction.mem_operands() {
         let (src, dst) = match instruction {
             Instruction::Mov(ref o1, ref o2) => (o1, o2),
-	    Instruction::Binary(_, ref o1, ref o2) => (o1, o2),
+            Instruction::Binary(_, ref o1, ref o2) => (o1, o2),
+            Instruction::Cmp(ref o1, ref o2) => (o1, o2),
             _ => unreachable!(),
         };
         let temp_reg = Register::R10;
         let mov1 = Instruction::Mov(src.clone(), Operand::Reg(temp_reg));
-	let snd = if let Instruction::Binary(op, _, _) = instruction {
-	    Instruction::Binary(op, Operand::Reg(temp_reg), dst.clone())
-	} else {
-	    Instruction::Mov(Operand::Reg(temp_reg), dst.clone())
-	};
+        let snd = match instruction {
+            Instruction::Binary(op, _, _) => {
+                Instruction::Binary(op, Operand::Reg(temp_reg), dst.clone())
+            }
+            Instruction::Mov(_, _) => Instruction::Mov(Operand::Reg(temp_reg), dst.clone()),
+            Instruction::Cmp(_, _) => Instruction::Cmp(Operand::Reg(temp_reg), dst.clone()),
+            _ => unreachable!(),
+        };
         result.push(mov1);
         result.push(snd);
+    }
+    result
+}
+
+fn fix_cmp_sndimm(instr: Instruction) -> Instructions {
+    let mut result = Instructions::new();
+    if let Instruction::Cmp(src, dst) = instr {
+        let temp_reg = Register::R11;
+        let mov = Instruction::Mov(dst, Operand::Reg(temp_reg));
+        let cmp = Instruction::Cmp(src, Operand::Reg(temp_reg));
+        result.push(mov);
+        result.push(cmp);
     }
     result
 }
@@ -317,24 +439,26 @@ fn fix_instructions(instructions: &mut Instructions) {
     let indexes: Vec<_> = instructions
         .iter()
         .enumerate()
-        .filter(|(_, i)| i.mem_operands() || i.is_mul_sndmem() || i.is_idiv_constant())
+        .filter(|(_, i)| i.mem_operands() || i.is_mul_sndmem() || i.is_idiv_constant() || i.is_cmp_sndimm())
         .map(|(i, _)| i)
         .collect();
 
     let mut count = 0;
     for i in indexes {
         let instr = instructions.remove(i + count);
-        
+
         let fixed = if instr.mem_operands() {
             fix_two_memoperands(instr)
         } else if instr.is_mul_sndmem() {
             fix_imul(instr)
         } else if instr.is_idiv_constant() {
             fix_idiv(instr)
+        } else if instr.is_cmp_sndimm() {
+            fix_cmp_sndimm(instr)
         } else {
             unreachable!()
         };
-        
+
         for instr in fixed.into_iter() {
             instructions.insert(i + count, instr);
             count += 1;
