@@ -23,7 +23,7 @@ pub enum Statement {
 pub enum Expression {
     Binary(BinaryOp, Box<Expression>, Box<Expression>),
     Unary(UnaryOperator, Box<Expression>),
-    Constant(u64)
+    Constant(u64),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -32,13 +32,22 @@ pub enum BinaryOp {
     Multiply,
     Div,
     Mod,
-    Substract
+    Substract,
+    LogicalAnd,
+    LogicalOr,
+    IsEqual,
+    IsNotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum UnaryOperator {
     Complement,
     Negate,
+    LogicalNot,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -90,10 +99,13 @@ fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
 }
 
 fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
+    dbg!("parse_unary");
+    dbg!(tokens[0].clone());
     if let Some(token) = take_token(tokens) {
         match token {
             Token::Hyphen => Ok(UnaryOperator::Negate),
             Token::Tilde => Ok(UnaryOperator::Complement),
+            Token::LogicalNot => Ok(UnaryOperator::LogicalNot),
             _ => Err(ParseError::ExpectedButGot(Token::Hyphen, token)),
         }
     } else {
@@ -106,65 +118,115 @@ fn take_token(tokens: &mut Tokens) -> Option<Token> {
 }
 
 fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
+    dbg!("parse_binop");
+    dbg!(tokens[0].clone());
     if tokens.is_empty() {
-	return Err(ParseError::ExpectedExpression);
+        return Err(ParseError::ExpectedExpression);
     }
     let next_token = take_token(tokens).expect("Should never fail");
 
     match next_token {
-	Token::Plus => Ok(BinaryOp::Add),
-	Token::Hyphen => Ok(BinaryOp::Substract),
-	Token::FSlash => Ok(BinaryOp::Div),
-	Token::Percent => Ok(BinaryOp::Mod),
-	Token::Asterisk => Ok(BinaryOp::Multiply),
-	_ => Err(ParseError::BadExpression(next_token.clone()))
+        Token::Plus => Ok(BinaryOp::Add),
+        Token::Hyphen => Ok(BinaryOp::Substract),
+        Token::FSlash => Ok(BinaryOp::Div),
+        Token::Percent => Ok(BinaryOp::Mod),
+        Token::Asterisk => Ok(BinaryOp::Multiply),
+        Token::LogicalAnd => Ok(BinaryOp::LogicalAnd),
+        Token::LogicalOr => Ok(BinaryOp::LogicalOr),
+        Token::IsEqual => Ok(BinaryOp::IsEqual),
+        Token::IsNotEqual => Ok(BinaryOp::IsNotEqual),
+        Token::IsLessThan => Ok(BinaryOp::LessThan),
+        Token::IsLessThanOrEqual => Ok(BinaryOp::LessOrEqual),
+        Token::IsGreaterThan => Ok(BinaryOp::GreaterThan),
+        Token::IsGreaterThanOrEqual => Ok(BinaryOp::GreaterOrEqual),
+        _ => Err(ParseError::BadExpression(next_token.clone())),
+    }
+}
+
+fn token_is_binaryop(token: &Token) -> bool {
+    match token {
+        &Token::Plus
+        | &Token::Hyphen
+        | &Token::Asterisk
+        | &Token::FSlash
+        | &Token::Percent
+        | &Token::LogicalAnd
+        | &Token::LogicalOr
+        | &Token::IsEqual
+        | &Token::IsNotEqual
+        | &Token::IsLessThan
+        | &Token::IsLessThanOrEqual
+        | &Token::IsGreaterThan
+        | &Token::IsGreaterThanOrEqual => true,
+        _ => false,
+    }
+}
+
+fn get_prec(token: &Token) -> u64 {
+    match token {
+        Token::Asterisk => 50,
+        Token::FSlash => 50,
+        Token::Percent => 50,
+        Token::Plus => 45,
+        Token::Hyphen => 45,
+        Token::IsLessThan => 35,
+        Token::IsLessThanOrEqual => 35,
+        Token::IsGreaterThan => 35,
+        Token::IsGreaterThanOrEqual => 35,
+        Token::IsEqual => 30,
+        Token::IsNotEqual => 30,
+        Token::LogicalAnd => 10,
+        Token::LogicalOr => 5,
+        _ => 0
     }
 }
 
 fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseError> {
+    dbg!("parse_exp");
+    dbg!(tokens.clone());
     let mut left = parse_factor(tokens)?;
     while !tokens.is_empty() {
-	let next_token = tokens.front().expect("Should never fail").clone();
-	let prec = next_token.get_prec();
-	if !(next_token.is_binary() && prec >= min_prec) {
-	    break;
-	}
+        let next_token = tokens.front().expect("Should never fail").clone();
+        let prec = get_prec(&next_token);
+        if !(token_is_binaryop(&next_token) && prec >= min_prec) {
+            break;
+        }
 
-	let operator = parse_binop(tokens)?;
-	let right = parse_exp(tokens, next_token.get_prec() + 1)?;
+        let operator = parse_binop(tokens)?;
+        let right = parse_exp(tokens, prec + 1)?;
 
-	left = Expression::Binary(operator, Box::new(left), Box::new(right));
-	
+        left = Expression::Binary(operator, Box::new(left), Box::new(right));
     }
     Ok(left)
 }
 
 fn parse_factor(tokens: &mut Tokens) -> Result<Expression, ParseError> {
+    dbg!("parse_factor");
+    dbg!(tokens.clone());
     if tokens.is_empty() {
-	return Err(ParseError::ExpectedExpression);
+        return Err(ParseError::ExpectedExpression);
     }
     let next_token = tokens.front().expect("Should never fail");
-    
+
     match next_token {
-	Token::Tilde | Token::Hyphen => {
-	    let operator = parse_unary(tokens)?;
-	    let inner_exp = Box::new(parse_factor(tokens)?);
-	    Ok(Expression::Unary(operator, inner_exp))
-	}
-	Token::OpenParanth => {
-	    take_token(tokens);
-	    let inner_exp = parse_exp(tokens, 0)?;
-	    expect_token(tokens, Token::CloseParanth)?;
-	    Ok(inner_exp)
-	}
-	Token::Constant(i) => {
-	    let inner = *i;
-	    take_token(tokens);
-	    Ok(Expression::Constant(inner))
-	}
-	_ => Err(ParseError::BadExpression(next_token.clone()))
+        Token::Tilde | Token::Hyphen | Token::LogicalNot => {
+            let operator = parse_unary(tokens)?;
+            let inner_exp = Box::new(parse_factor(tokens)?);
+            Ok(Expression::Unary(operator, inner_exp))
+        }
+        Token::OpenParanth => {
+            take_token(tokens);
+            let inner_exp = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::CloseParanth)?;
+            Ok(inner_exp)
+        }
+        Token::Constant(i) => {
+            let inner = *i;
+            take_token(tokens);
+            Ok(Expression::Constant(inner))
+        }
+        _ => Err(ParseError::BadExpression(next_token.clone())),
     }
-    
 }
 
 fn parse_statement(tokens: &mut Tokens) -> Result<Statement, ParseError> {
@@ -198,6 +260,7 @@ fn parse_program(tokens: &mut Tokens) -> Result<Program, ParseError> {
 }
 
 pub fn parse(mut tokens: Tokens) -> Result<Program, ParseError> {
+    dbg!(tokens.clone());
     Ok(parse_program(&mut tokens)?)
 }
 
@@ -208,26 +271,26 @@ mod parser_tests {
 
     #[test]
     fn test_expression_precedense_1() {
-	let exp = String::from("1 * 2 - 3 * (4 + 5)");
-	let mut tokens = lexer::lex(exp).unwrap();
-	let parsed = parse_exp(&mut tokens, 0);
-	let expected = Expression::Binary(
-	    BinaryOp::Substract,
-	    Box::new(Expression::Binary(
+        let exp = String::from("1 * 2 - 3 * (4 + 5)");
+        let mut tokens = lexer::lex(exp).unwrap();
+        let parsed = parse_exp(&mut tokens, 0);
+        let expected = Expression::Binary(
+            BinaryOp::Substract,
+            Box::new(Expression::Binary(
                 BinaryOp::Multiply,
                 Box::new(Expression::Constant(1)),
-                Box::new(Expression::Constant(2)))
-            ),
-	    Box::new(Expression::Binary(
-		BinaryOp::Multiply,
-		Box::new(Expression::Constant(3)),
-		Box::new(Expression::Binary(
-		    BinaryOp::Add,
-		    Box::new(Expression::Constant(4)),
-		    Box::new(Expression::Constant(5))
-		))
-	    ))
-	);
-	assert_eq!(Ok(expected), parsed);
+                Box::new(Expression::Constant(2)),
+            )),
+            Box::new(Expression::Binary(
+                BinaryOp::Multiply,
+                Box::new(Expression::Constant(3)),
+                Box::new(Expression::Binary(
+                    BinaryOp::Add,
+                    Box::new(Expression::Constant(4)),
+                    Box::new(Expression::Constant(5)),
+                )),
+            )),
+        );
+        assert_eq!(Ok(expected), parsed);
     }
 }

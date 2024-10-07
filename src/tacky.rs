@@ -67,6 +67,7 @@ impl From<ast::UnaryOperator> for UnaryOp {
         match value {
             ast::UnaryOperator::Complement => UnaryOp::Complement,
             ast::UnaryOperator::Negate => UnaryOp::Negate,
+            _ => unimplemented!()
         }
     }
 }
@@ -79,6 +80,7 @@ impl From<ast::BinaryOp> for BinaryOp {
 	    ast::BinaryOp::Mod => Self::Reminder,
 	    ast::BinaryOp::Multiply => Self::Multiply,
 	    ast::BinaryOp::Div => Self::Divide,
+            _ => unimplemented!()
 	}
     }
 }
