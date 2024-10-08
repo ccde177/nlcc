@@ -1,6 +1,9 @@
 use std::collections::VecDeque;
 use std::{error, fmt};
 
+#[cfg(test)]
+mod lexer_tests;
+
 pub type Tokens = VecDeque<Token>;
 type Input = VecDeque<char>;
 
@@ -35,7 +38,7 @@ pub enum Token {
     IsGreaterThanOrEqual,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum LexError {
     UnexpectedChar(char),
     BadConstant(String),
@@ -101,13 +104,13 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
         ('!', '=') => Ok(Token::IsNotEqual),
         ('>', '=') => Ok(Token::IsGreaterThanOrEqual),
         ('<', '=') => Ok(Token::IsLessThanOrEqual),
-        _ => Err(LexError::UnexpectedChar(first))
-        };
-        
+        _ => Err(LexError::UnexpectedChar(first)),
+    };
+
     if let Ok(_) = result {
         input.pop_front();
     }
-    
+
     result.or(Token::try_from(first))
 }
 
