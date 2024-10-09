@@ -7,30 +7,30 @@ mod parser_tests;
 type Identifier = String;
 
 #[derive(Debug, Clone)]
-pub enum Program {
-    FunDef(Function),
+pub enum Ast {
+    FunDef(AstFunction),
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct AstFunction {
     pub name: Identifier,
-    pub body: Statement,
+    pub body: AstStatement,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Statement {
-    Return(Expression),
+pub enum AstStatement {
+    Return(AstExp),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Expression {
-    Binary(BinaryOp, Box<Expression>, Box<Expression>),
-    Unary(UnaryOperator, Box<Expression>),
+pub enum AstExp {
+    Binary(AstBinaryOp, Box<AstExp>, Box<AstExp>),
+    Unary(AstUnaryOp, Box<AstExp>),
     Constant(u64),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum BinaryOp {
+pub enum AstBinaryOp {
     Add,
     Multiply,
     Div,
@@ -47,7 +47,7 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum UnaryOperator {
+pub enum AstUnaryOp {
     Complement,
     Negate,
     LogicalNot,
@@ -101,12 +101,12 @@ fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier, ParseError> {
     )
 }
 
-fn parse_unary(tokens: &mut Tokens) -> Result<UnaryOperator, ParseError> {
+fn parse_unary(tokens: &mut Tokens) -> Result<AstUnaryOp, ParseError> {
     if let Some(token) = take_token(tokens) {
         match token {
-            Token::Hyphen => Ok(UnaryOperator::Negate),
-            Token::Tilde => Ok(UnaryOperator::Complement),
-            Token::LogicalNot => Ok(UnaryOperator::LogicalNot),
+            Token::Hyphen => Ok(AstUnaryOp::Negate),
+            Token::Tilde => Ok(AstUnaryOp::Complement),
+            Token::LogicalNot => Ok(AstUnaryOp::LogicalNot),
             _ => Err(ParseError::ExpectedButGot(Token::Hyphen, token)),
         }
     } else {
@@ -118,26 +118,26 @@ fn take_token(tokens: &mut Tokens) -> Option<Token> {
     tokens.pop_front()
 }
 
-fn parse_binop(tokens: &mut Tokens) -> Result<BinaryOp, ParseError> {
+fn parse_binop(tokens: &mut Tokens) -> Result<AstBinaryOp, ParseError> {
     if tokens.is_empty() {
         return Err(ParseError::ExpectedExpression);
     }
     let next_token = take_token(tokens).expect("Should never fail");
 
     match next_token {
-        Token::Plus => Ok(BinaryOp::Add),
-        Token::Hyphen => Ok(BinaryOp::Substract),
-        Token::FSlash => Ok(BinaryOp::Div),
-        Token::Percent => Ok(BinaryOp::Mod),
-        Token::Asterisk => Ok(BinaryOp::Multiply),
-        Token::LogicalAnd => Ok(BinaryOp::LogicalAnd),
-        Token::LogicalOr => Ok(BinaryOp::LogicalOr),
-        Token::IsEqual => Ok(BinaryOp::IsEqual),
-        Token::IsNotEqual => Ok(BinaryOp::IsNotEqual),
-        Token::IsLessThan => Ok(BinaryOp::LessThan),
-        Token::IsLessThanOrEqual => Ok(BinaryOp::LessOrEqual),
-        Token::IsGreaterThan => Ok(BinaryOp::GreaterThan),
-        Token::IsGreaterThanOrEqual => Ok(BinaryOp::GreaterOrEqual),
+        Token::Plus => Ok(AstBinaryOp::Add),
+        Token::Hyphen => Ok(AstBinaryOp::Substract),
+        Token::FSlash => Ok(AstBinaryOp::Div),
+        Token::Percent => Ok(AstBinaryOp::Mod),
+        Token::Asterisk => Ok(AstBinaryOp::Multiply),
+        Token::LogicalAnd => Ok(AstBinaryOp::LogicalAnd),
+        Token::LogicalOr => Ok(AstBinaryOp::LogicalOr),
+        Token::IsEqual => Ok(AstBinaryOp::IsEqual),
+        Token::IsNotEqual => Ok(AstBinaryOp::IsNotEqual),
+        Token::IsLessThan => Ok(AstBinaryOp::LessThan),
+        Token::IsLessThanOrEqual => Ok(AstBinaryOp::LessOrEqual),
+        Token::IsGreaterThan => Ok(AstBinaryOp::GreaterThan),
+        Token::IsGreaterThanOrEqual => Ok(AstBinaryOp::GreaterOrEqual),
         _ => Err(ParseError::BadExpression(next_token.clone())),
     }
 }
@@ -180,7 +180,7 @@ fn get_prec(token: &Token) -> u64 {
     }
 }
 
-fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseError> {
+fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
     let mut left = parse_factor(tokens)?;
     while !tokens.is_empty() {
         let next_token = tokens.front().expect("Should never fail").clone();
@@ -192,12 +192,12 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<Expression, ParseErro
         let operator = parse_binop(tokens)?;
         let right = parse_exp(tokens, prec + 1)?;
 
-        left = Expression::Binary(operator, Box::new(left), Box::new(right));
+        left = AstExp::Binary(operator, Box::new(left), Box::new(right));
     }
     Ok(left)
 }
 
-fn parse_factor(tokens: &mut Tokens) -> Result<Expression, ParseError> {
+fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
     if tokens.is_empty() {
         return Err(ParseError::ExpectedExpression);
     }
@@ -207,7 +207,7 @@ fn parse_factor(tokens: &mut Tokens) -> Result<Expression, ParseError> {
         Token::Tilde | Token::Hyphen | Token::LogicalNot => {
             let operator = parse_unary(tokens)?;
             let inner_exp = Box::new(parse_factor(tokens)?);
-            Ok(Expression::Unary(operator, inner_exp))
+            Ok(AstExp::Unary(operator, inner_exp))
         }
         Token::OpenParanth => {
             take_token(tokens);
@@ -218,20 +218,20 @@ fn parse_factor(tokens: &mut Tokens) -> Result<Expression, ParseError> {
         Token::Constant(i) => {
             let inner = *i;
             take_token(tokens);
-            Ok(Expression::Constant(inner))
+            Ok(AstExp::Constant(inner))
         }
         _ => Err(ParseError::BadExpression(next_token.clone())),
     }
 }
 
-fn parse_statement(tokens: &mut Tokens) -> Result<Statement, ParseError> {
+fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
     expect_token(tokens, Token::Return)?;
     let exp = parse_exp(tokens, 0)?;
     expect_token(tokens, Token::Semicolon)?;
-    Ok(Statement::Return(exp))
+    Ok(AstStatement::Return(exp))
 }
 
-fn parse_function(tokens: &mut Tokens) -> Result<Function, ParseError> {
+fn parse_function(tokens: &mut Tokens) -> Result<AstFunction, ParseError> {
     expect_token(tokens, Token::Int)?;
     let identifier = expect_identifier(tokens)?;
     expect_token(tokens, Token::OpenParanth)?;
@@ -243,18 +243,18 @@ fn parse_function(tokens: &mut Tokens) -> Result<Function, ParseError> {
     if !tokens.is_empty() {
         Err(ParseError::MoreTokensThanExpected(tokens.clone()))
     } else {
-        Ok(Function {
+        Ok(AstFunction {
             name: identifier,
             body: statement,
         })
     }
 }
 
-fn parse_program(tokens: &mut Tokens) -> Result<Program, ParseError> {
-    Ok(Program::FunDef(parse_function(tokens)?))
+fn parse_program(tokens: &mut Tokens) -> Result<Ast, ParseError> {
+    Ok(Ast::FunDef(parse_function(tokens)?))
 }
 
-pub fn parse(mut tokens: Tokens) -> Result<Program, ParseError> {
+pub fn parse(mut tokens: Tokens) -> Result<Ast, ParseError> {
     Ok(parse_program(&mut tokens)?)
 }
 

@@ -1,19 +1,19 @@
-use crate::tacky;
+use crate::tacky::*;
 
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub enum Program {
+pub enum AsmAst {
     Program(Function),
 }
 
-type Identifier = String;
-type Instructions = Vec<Instruction>;
+pub type AsmInstructions = Vec<Instruction>;
+pub type Identifier = String;
 
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
-    pub body: Instructions,
+    pub body: AsmInstructions,
 }
 
 #[derive(Debug)]
@@ -42,11 +42,32 @@ pub enum Condition {
     LE,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+}
+
+#[derive(Clone, Debug)]
+pub enum Operand {
+    Imm(u64),
+    Reg(Register),
+    Pseudo(Identifier),
+    Stack(u64),
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
     Imul,
+}
+
+type StackAllocMap = HashMap<Identifier, u64>;
+
+struct StackAllocator {
+    offset: u64,
+    map: StackAllocMap,
 }
 
 impl Instruction {
@@ -83,20 +104,6 @@ impl Instruction {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum UnaryOp {
-    Neg,
-    Not,
-}
-
-#[derive(Clone, Debug)]
-pub enum Operand {
-    Imm(u64),
-    Reg(Register),
-    Pseudo(Identifier),
-    Stack(u64),
-}
-
 impl Operand {
     fn is_mem(&self) -> bool {
         match self {
@@ -108,7 +115,7 @@ impl Operand {
     pub fn is_reg(&self) -> bool {
         match self {
             Self::Reg(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -128,26 +135,23 @@ pub enum Register {
     R11,
 }
 
-fn val_to_operand(val: &tacky::Value) -> Operand {
-    match val {
-        tacky::Value::Constant(u) => Operand::Imm(*u),
-        tacky::Value::Var(identifier) => Operand::Pseudo(identifier.clone()),
+impl From<TValue> for Operand {
+    fn from(value: TValue) -> Self {
+        match value {
+            TValue::Constant(u) => Self::Imm(u),
+            TValue::Var(id) => Self::Pseudo(id.clone()),
+        }
     }
 }
 
-fn unary_from_tacky(op: &tacky::UnaryOp) -> UnaryOp {
-    match op {
-        tacky::UnaryOp::Complement => UnaryOp::Not,
-        tacky::UnaryOp::Negate => UnaryOp::Neg,
-        _ => unimplemented!(),
+impl From<TUnaryOp> for UnaryOp {
+    fn from(value: TUnaryOp) -> Self {
+        match value {
+            TUnaryOp::Complement => UnaryOp::Not,
+            TUnaryOp::Negate => UnaryOp::Neg,
+            _ => unreachable!(),
+        }
     }
-}
-
-type StackAllocMap = HashMap<Identifier, u64>;
-
-struct StackAllocator {
-    offset: u64,
-    map: StackAllocMap,
 }
 
 impl StackAllocator {
@@ -182,22 +186,22 @@ impl StackAllocator {
     }
 }
 
-impl From<tacky::BinaryOp> for BinaryOp {
-    fn from(value: tacky::BinaryOp) -> Self {
+impl From<TBinaryOp> for BinaryOp {
+    fn from(value: TBinaryOp) -> Self {
         match value {
-            tacky::BinaryOp::Add => BinaryOp::Add,
-            tacky::BinaryOp::Multiply => BinaryOp::Imul,
-            tacky::BinaryOp::Substract => BinaryOp::Sub,
+            TBinaryOp::Add => BinaryOp::Add,
+            TBinaryOp::Multiply => BinaryOp::Imul,
+            TBinaryOp::Substract => BinaryOp::Sub,
             _ => unimplemented!(),
         }
     }
 }
 
-fn tbinary_to_asm(instructions: &mut Instructions, tinstr: tacky::Instruction) {
-    if let tacky::Instruction::Binary(op, val1, val2, val3) = tinstr {
-        let src1 = val_to_operand(&val1);
-        let src2 = val_to_operand(&val2);
-        let dst = val_to_operand(&val3);
+fn tbinary_to_asm(instructions: &mut AsmInstructions, tinstr: TInstruction) {
+    if let TInstruction::Binary(op, val1, val2, val3) = tinstr {
+        let src1 = Operand::from(val1);
+        let src2 = Operand::from(val2);
+        let dst = Operand::from(val3);
 
         let is_div = op.is_div();
         let is_rem = op.is_rem();
@@ -226,26 +230,27 @@ fn tbinary_to_asm(instructions: &mut Instructions, tinstr: tacky::Instruction) {
     }
 }
 
-impl From<tacky::BinaryOp> for Condition {
-    fn from(value: tacky::BinaryOp) -> Self {
+//TODO: Change to TryFrom<_>
+impl From<TBinaryOp> for Condition {
+    fn from(value: TBinaryOp) -> Self {
         match value {
-            tacky::BinaryOp::IsGreaterThan => Self::G,
-            tacky::BinaryOp::IsGreaterOrEqual => Self::GE,
-            tacky::BinaryOp::IsEqual => Self::E,
-            tacky::BinaryOp::IsNotEqual => Self::NE,
-            tacky::BinaryOp::IsLessThan => Self::L,
-            tacky::BinaryOp::IsLessOrEqual => Self::LE,
+            TBinaryOp::IsGreaterThan => Self::G,
+            TBinaryOp::IsGreaterOrEqual => Self::GE,
+            TBinaryOp::IsEqual => Self::E,
+            TBinaryOp::IsNotEqual => Self::NE,
+            TBinaryOp::IsLessThan => Self::L,
+            TBinaryOp::IsLessOrEqual => Self::LE,
             _ => unreachable!(),
         }
     }
 }
 
-fn tcomp_to_asm(instructions: &mut Instructions, instr: tacky::Instruction) {
+fn tcomp_to_asm(instructions: &mut AsmInstructions, instr: TInstruction) {
     match instr {
-        tacky::Instruction::Binary(op, src1, src2, dst) => {
-            let src1 = val_to_operand(&src1);
-            let src2 = val_to_operand(&src2);
-            let dst = val_to_operand(&dst);
+        TInstruction::Binary(op, src1, src2, dst) => {
+            let src1 = Operand::from(src1);
+            let src2 = Operand::from(src2);
+            let dst = Operand::from(dst);
             let cmp = Instruction::Cmp(src2, src1);
             let mov = Instruction::Mov(Operand::Imm(0), dst.clone());
             let setcc = Instruction::SetCC(Condition::from(op), dst);
@@ -257,21 +262,21 @@ fn tcomp_to_asm(instructions: &mut Instructions, instr: tacky::Instruction) {
     }
 }
 
-fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
-    let mut instructions = Instructions::new();
+fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
+    let mut instructions = AsmInstructions::new();
     for inst in body.into_iter() {
         match inst {
-            tacky::Instruction::Return(val) => {
-                let src = val_to_operand(&val);
+            TInstruction::Return(val) => {
+                let src = Operand::from(val);
                 let dst = Operand::Reg(Register::Ax);
                 let mov = Instruction::Mov(src, dst);
                 let ret = Instruction::Ret;
                 instructions.push(mov);
                 instructions.push(ret);
             }
-            tacky::Instruction::Unary(tacky::UnaryOp::LogicalNot, src, dst) => {
-                let src = val_to_operand(&src);
-                let dst = val_to_operand(&dst);
+            TInstruction::Unary(TUnaryOp::LogicalNot, src, dst) => {
+                let src = Operand::from(src);
+                let dst = Operand::from(dst);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let mov = Instruction::Mov(Operand::Imm(0), dst.clone());
                 let setcc = Instruction::SetCC(Condition::E, dst);
@@ -279,46 +284,46 @@ fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
                 instructions.push(mov);
                 instructions.push(setcc);
             }
-            tacky::Instruction::Unary(op, val1, val2) => {
-                let src = val_to_operand(&val1);
-                let dst = val_to_operand(&val2);
-                let op = unary_from_tacky(&op);
+            TInstruction::Unary(op, val1, val2) => {
+                let src = Operand::from(val1);
+                let dst = Operand::from(val2);
+                let op = UnaryOp::from(op);
                 let mov = Instruction::Mov(src, dst.clone());
                 let unary = Instruction::Unary(op, dst);
                 instructions.push(mov);
                 instructions.push(unary);
             }
-            tacky::Instruction::Binary(op, _, _, _) => {
+            TInstruction::Binary(op, _, _, _) => {
                 if op.is_comp() {
                     tcomp_to_asm(&mut instructions, inst);
                 } else {
                     tbinary_to_asm(&mut instructions, inst);
                 }
             }
-            tacky::Instruction::JumpIfZero(val, target) => {
-                let src = val_to_operand(&val);
+            TInstruction::JumpIfZero(val, target) => {
+                let src = Operand::from(val);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let jmp = Instruction::JmpCC(Condition::E, target);
                 instructions.push(cmp);
                 instructions.push(jmp);
             }
-            tacky::Instruction::JumpIfNotZero(val, target) => {
-                let src = val_to_operand(&val);
+            TInstruction::JumpIfNotZero(val, target) => {
+                let src = Operand::from(val);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let jmp = Instruction::JmpCC(Condition::NE, target);
                 instructions.push(cmp);
                 instructions.push(jmp);
             }
-            tacky::Instruction::Copy(src, dst) => {
-                let src = val_to_operand(&src);
-                let dst = val_to_operand(&dst);
+            TInstruction::Copy(src, dst) => {
+                let src = Operand::from(src);
+                let dst = Operand::from(dst);
                 let mov = Instruction::Mov(src, dst);
                 instructions.push(mov);
             }
-            tacky::Instruction::Label(id) => {
+            TInstruction::Label(id) => {
                 instructions.push(Instruction::Label(id));
             }
-            tacky::Instruction::Jump(target) => {
+            TInstruction::Jump(target) => {
                 instructions.push(Instruction::Jmp(target));
             }
         }
@@ -326,7 +331,7 @@ fn tacky_to_asm(body: tacky::Instructions) -> Instructions {
     instructions
 }
 
-fn allocate_stack(instructions: &mut Instructions) {
+fn allocate_stack(instructions: &mut AsmInstructions) {
     let mut sa = StackAllocator::new();
     for inst in instructions.iter_mut() {
         match inst {
@@ -364,8 +369,8 @@ fn allocate_stack(instructions: &mut Instructions) {
     instructions.insert(0, prologue);
 }
 
-fn fix_imul(instruction: Instruction) -> Instructions {
-    let mut result = Instructions::new();
+fn fix_imul(instruction: Instruction) -> AsmInstructions {
+    let mut result = AsmInstructions::new();
     if instruction.is_mul_sndmem() {
         let (op, src, dst) = match instruction {
             Instruction::Binary(op, src, dst) => (op, src, dst),
@@ -382,8 +387,8 @@ fn fix_imul(instruction: Instruction) -> Instructions {
     result
 }
 
-fn fix_idiv(instruction: Instruction) -> Instructions {
-    let mut result = Instructions::new();
+fn fix_idiv(instruction: Instruction) -> AsmInstructions {
+    let mut result = AsmInstructions::new();
     if instruction.is_idiv_constant() {
         let operand = match instruction {
             Instruction::Idiv(operand) => operand,
@@ -398,8 +403,8 @@ fn fix_idiv(instruction: Instruction) -> Instructions {
     result
 }
 
-fn fix_two_memoperands(instruction: Instruction) -> Instructions {
-    let mut result = Instructions::new();
+fn fix_two_memoperands(instruction: Instruction) -> AsmInstructions {
+    let mut result = AsmInstructions::new();
     if instruction.mem_operands() {
         let (src, dst) = match instruction {
             Instruction::Mov(ref o1, ref o2) => (o1, o2),
@@ -423,8 +428,8 @@ fn fix_two_memoperands(instruction: Instruction) -> Instructions {
     result
 }
 
-fn fix_cmp_sndimm(instr: Instruction) -> Instructions {
-    let mut result = Instructions::new();
+fn fix_cmp_sndimm(instr: Instruction) -> AsmInstructions {
+    let mut result = AsmInstructions::new();
     if let Instruction::Cmp(src, dst) = instr {
         let temp_reg = Register::R11;
         let mov = Instruction::Mov(dst, Operand::Reg(temp_reg));
@@ -435,11 +440,13 @@ fn fix_cmp_sndimm(instr: Instruction) -> Instructions {
     result
 }
 
-fn fix_instructions(instructions: &mut Instructions) {
+fn fix_instructions(instructions: &mut AsmInstructions) {
     let indexes: Vec<_> = instructions
         .iter()
         .enumerate()
-        .filter(|(_, i)| i.mem_operands() || i.is_mul_sndmem() || i.is_idiv_constant() || i.is_cmp_sndimm())
+        .filter(|(_, i)| {
+            i.mem_operands() || i.is_mul_sndmem() || i.is_idiv_constant() || i.is_cmp_sndimm()
+        })
         .map(|(i, _)| i)
         .collect();
 
@@ -467,24 +474,24 @@ fn fix_instructions(instructions: &mut Instructions) {
     }
 }
 
-fn gen_body(body: tacky::Instructions) -> Instructions {
+fn gen_body(body: TInstructions) -> AsmInstructions {
     let mut instructions = tacky_to_asm(body);
     allocate_stack(&mut instructions);
     fix_instructions(&mut instructions);
     instructions
 }
 
-fn gen_fundef(f: tacky::FunDef) -> Function {
+fn gen_fundef(f: TFunction) -> Function {
     match f {
-        tacky::FunDef::Function(name, body) => Function {
+        TFunction::FunDef(name, body) => Function {
             name,
             body: gen_body(body),
         },
     }
 }
 
-pub fn codegen(ast: tacky::TackyAst) -> Program {
+pub fn codegen(ast: TAst) -> AsmAst {
     match ast {
-        tacky::TackyAst::Program(f) => Program::Program(gen_fundef(f)),
+        TAst::Program(f) => AsmAst::Program(gen_fundef(f)),
     }
 }

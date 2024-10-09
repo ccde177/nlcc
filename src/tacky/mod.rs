@@ -1,28 +1,35 @@
-use crate::parser as ast;
-type Identifier = String;
-pub type Instructions = Vec<Instruction>;
+#[cfg(test)]
+mod tacky_tests;
 
-pub enum TackyAst {
-    Program(FunDef),
+use crate::parser::*;
+
+pub type Identifier = String;
+pub type TInstructions = Vec<TInstruction>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TAst {
+    Program(TFunction),
 }
 
-pub enum FunDef {
-    Function(Identifier, Instructions),
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TFunction {
+    FunDef(Identifier, TInstructions),
 }
 
-pub enum Instruction {
-    Return(Value),
-    Unary(UnaryOp, Value, Value),
-    Binary(BinaryOp, Value, Value, Value),
-    Copy(Value, Value),
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TInstruction {
+    Return(TValue),
+    Unary(TUnaryOp, TValue, TValue),
+    Binary(TBinaryOp, TValue, TValue, TValue),
+    Copy(TValue, TValue),
     Jump(Identifier),
-    JumpIfZero(Value, Identifier),
-    JumpIfNotZero(Value, Identifier),
+    JumpIfZero(TValue, Identifier),
+    JumpIfNotZero(TValue, Identifier),
     Label(Identifier),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum BinaryOp {
+pub enum TBinaryOp {
     Add,
     Substract,
     Multiply,
@@ -36,25 +43,26 @@ pub enum BinaryOp {
     IsGreaterOrEqual,
 }
 
-#[derive(Clone)]
-pub enum Value {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TValue {
     Constant(u64),
     Var(Identifier),
 }
 
-pub enum UnaryOp {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TUnaryOp {
     Complement,
     Negate,
     LogicalNot,
 }
 
-impl BinaryOp {
+impl TBinaryOp {
     pub fn is_div(&self) -> bool {
-        *self == BinaryOp::Divide
+        *self == TBinaryOp::Divide
     }
 
     pub fn is_rem(&self) -> bool {
-        *self == BinaryOp::Reminder
+        *self == TBinaryOp::Reminder
     }
 
     pub fn is_comp(&self) -> bool {
@@ -92,137 +100,137 @@ impl NameGenerator {
     fn get_label(&mut self) -> String {
         let c = self.label_count;
         self.label_count += 1;
-        format!("lable_{c}")
+        format!("label_{c}")
     }
 }
 
-impl From<ast::UnaryOperator> for UnaryOp {
-    fn from(value: ast::UnaryOperator) -> Self {
+impl From<AstUnaryOp> for TUnaryOp {
+    fn from(value: AstUnaryOp) -> Self {
         match value {
-            ast::UnaryOperator::Complement => UnaryOp::Complement,
-            ast::UnaryOperator::Negate => UnaryOp::Negate,
-            ast::UnaryOperator::LogicalNot => UnaryOp::LogicalNot,
+            AstUnaryOp::Complement => TUnaryOp::Complement,
+            AstUnaryOp::Negate => TUnaryOp::Negate,
+            AstUnaryOp::LogicalNot => TUnaryOp::LogicalNot,
             _ => unimplemented!(),
         }
     }
 }
 
-impl From<ast::BinaryOp> for BinaryOp {
-    fn from(value: ast::BinaryOp) -> Self {
+impl From<AstBinaryOp> for TBinaryOp {
+    fn from(value: AstBinaryOp) -> Self {
         match value {
-            ast::BinaryOp::Add => Self::Add,
-            ast::BinaryOp::Substract => Self::Substract,
-            ast::BinaryOp::Mod => Self::Reminder,
-            ast::BinaryOp::Multiply => Self::Multiply,
-            ast::BinaryOp::Div => Self::Divide,
-            ast::BinaryOp::IsEqual => Self::IsEqual,
-            ast::BinaryOp::IsNotEqual => Self::IsNotEqual,
-            ast::BinaryOp::LessThan => Self::IsLessThan,
-            ast::BinaryOp::LessOrEqual => Self::IsLessOrEqual,
-            ast::BinaryOp::GreaterThan => Self::IsGreaterThan,
-            ast::BinaryOp::GreaterOrEqual => Self::IsGreaterOrEqual,
+            AstBinaryOp::Add => Self::Add,
+            AstBinaryOp::Substract => Self::Substract,
+            AstBinaryOp::Mod => Self::Reminder,
+            AstBinaryOp::Multiply => Self::Multiply,
+            AstBinaryOp::Div => Self::Divide,
+            AstBinaryOp::IsEqual => Self::IsEqual,
+            AstBinaryOp::IsNotEqual => Self::IsNotEqual,
+            AstBinaryOp::LessThan => Self::IsLessThan,
+            AstBinaryOp::LessOrEqual => Self::IsLessOrEqual,
+            AstBinaryOp::GreaterThan => Self::IsGreaterThan,
+            AstBinaryOp::GreaterOrEqual => Self::IsGreaterOrEqual,
             _ => unimplemented!(),
         }
     }
 }
 
 fn emit_instruction(
-    instructions: &mut Instructions,
-    e: ast::Expression,
+    instructions: &mut TInstructions,
+    e: AstExp,
     ng: &mut NameGenerator,
-) -> Value {
+) -> TValue {
     match e {
-        ast::Expression::Constant(u) => Value::Constant(u),
-        ast::Expression::Unary(op, exp) => {
-            let tacky_op = UnaryOp::from(op);
+        AstExp::Constant(u) => TValue::Constant(u),
+        AstExp::Unary(op, exp) => {
+            let tacky_op = TUnaryOp::from(op);
             let src = emit_instruction(instructions, exp.as_ref().clone(), ng);
             let dst_name = ng.get_name();
-            let dst = Value::Var(dst_name);
-            let tacky_instruction = Instruction::Unary(tacky_op, src, dst.clone());
+            let dst = TValue::Var(dst_name);
+            let tacky_instruction = TInstruction::Unary(tacky_op, src, dst.clone());
             instructions.push(tacky_instruction);
             dst
         }
-        ast::Expression::Binary(ast::BinaryOp::LogicalAnd, src, dst) => {
+        AstExp::Binary(AstBinaryOp::LogicalAnd, src, dst) => {
             let false_label = ng.get_label(); 
             let label_end = ng.get_label();
-            let result = Value::Var(ng.get_name());
-            let copy0 = Instruction::Copy(Value::Constant(0), result.clone());
-            let copy1 = Instruction::Copy(Value::Constant(1), result.clone());
-            let jumpend = Instruction::Jump(label_end.clone());
+            let result = TValue::Var(ng.get_name());
+            let copy0 = TInstruction::Copy(TValue::Constant(0), result.clone());
+            let copy1 = TInstruction::Copy(TValue::Constant(1), result.clone());
+            let jumpend = TInstruction::Jump(label_end.clone());
            
             let v1 = emit_instruction(instructions, src.as_ref().clone(), ng);
-            let jz1 = Instruction::JumpIfZero(v1.clone(), false_label.clone());
+            let jz1 = TInstruction::JumpIfZero(v1.clone(), false_label.clone());
             instructions.push(jz1);
             
             let v2 = emit_instruction(instructions, dst.as_ref().clone(), ng);
-            let jz2 = Instruction::JumpIfZero(v2.clone(), false_label.clone());
+            let jz2 = TInstruction::JumpIfZero(v2.clone(), false_label.clone());
             instructions.push(jz2);
             
             instructions.push(copy1);
             instructions.push(jumpend);
-            instructions.push(Instruction::Label(false_label));
+            instructions.push(TInstruction::Label(false_label));
             instructions.push(copy0);
-            instructions.push(Instruction::Label(label_end));
+            instructions.push(TInstruction::Label(label_end));
                         
             result
         }
-        ast::Expression::Binary(ast::BinaryOp::LogicalOr, src, dst) => {
+        AstExp::Binary(AstBinaryOp::LogicalOr, src, dst) => {
             let true_label = ng.get_label(); 
             let label_end = ng.get_label();
-            let result = Value::Var(ng.get_name());
-            let copy0 = Instruction::Copy(Value::Constant(0), result.clone());
-            let copy1 = Instruction::Copy(Value::Constant(1), result.clone());
-            let jumpend = Instruction::Jump(label_end.clone());
+            let result = TValue::Var(ng.get_name());
+            let copy0 = TInstruction::Copy(TValue::Constant(0), result.clone());
+            let copy1 = TInstruction::Copy(TValue::Constant(1), result.clone());
+            let jumpend = TInstruction::Jump(label_end.clone());
            
             let v1 = emit_instruction(instructions, src.as_ref().clone(), ng);
-            let jnz1 = Instruction::JumpIfNotZero(v1.clone(), true_label.clone());
+            let jnz1 = TInstruction::JumpIfNotZero(v1.clone(), true_label.clone());
             instructions.push(jnz1);
             
             let v2 = emit_instruction(instructions, dst.as_ref().clone(), ng);
-            let jiz2 = Instruction::JumpIfNotZero(v2.clone(), true_label.clone());
+            let jiz2 = TInstruction::JumpIfNotZero(v2.clone(), true_label.clone());
             instructions.push(jiz2);
             
             instructions.push(copy0);
             instructions.push(jumpend);
-            instructions.push(Instruction::Label(true_label));
+            instructions.push(TInstruction::Label(true_label));
             instructions.push(copy1);
-            instructions.push(Instruction::Label(label_end));
+            instructions.push(TInstruction::Label(label_end));
                         
             result
         }
-        ast::Expression::Binary(op, exp1, exp2) => {
+        AstExp::Binary(op, exp1, exp2) => {
             let v1 = emit_instruction(instructions, exp1.as_ref().clone(), ng);
             let v2 = emit_instruction(instructions, exp2.as_ref().clone(), ng);
             let dst_name = ng.get_name();
-            let dst = Value::Var(dst_name);
-            let tacky_op = BinaryOp::from(op);
-            let tacky_instruction = Instruction::Binary(tacky_op, v1, v2, dst.clone());
+            let dst = TValue::Var(dst_name);
+            let tacky_op = TBinaryOp::from(op);
+            let tacky_instruction = TInstruction::Binary(tacky_op, v1, v2, dst.clone());
             instructions.push(tacky_instruction);
             dst
         }
     }
 }
 
-fn emit_statement(statement: ast::Statement) -> Instructions {
-    let mut instructions = Instructions::new();
+fn emit_statement(statement: AstStatement) -> TInstructions {
+    let mut instructions = TInstructions::new();
     let mut ng = NameGenerator::new();
     match statement {
-        ast::Statement::Return(e) => {
+        AstStatement::Return(e) => {
             let value = emit_instruction(&mut instructions, e, &mut ng);
-            instructions.push(Instruction::Return(value));
+            instructions.push(TInstruction::Return(value));
             instructions
         }
     }
 }
 
-fn emit_function(f: ast::Function) -> FunDef {
+fn emit_function(f: AstFunction) -> TFunction {
     match f {
-        ast::Function { name, body } => FunDef::Function(name.clone(), emit_statement(body)),
+        AstFunction { name, body } => TFunction::FunDef(name.clone(), emit_statement(body)),
     }
 }
 
-pub fn emit_tacky(input: ast::Program) -> TackyAst {
+pub fn emit_tacky(input: Ast) -> TAst {
     match input {
-        ast::Program::FunDef(f) => TackyAst::Program(emit_function(f)),
+        Ast::FunDef(f) => TAst::Program(emit_function(f)),
     }
 }

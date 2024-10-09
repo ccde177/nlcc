@@ -6,20 +6,20 @@ fn test_expression_precedense_1() {
     let exp = String::from("1 * 2 - 3 * (4 + 5)");
     let mut tokens = lexer::lex(exp).unwrap();
     let parsed = parse_exp(&mut tokens, 0);
-    let expected = Expression::Binary(
-        BinaryOp::Substract,
-        Box::new(Expression::Binary(
-            BinaryOp::Multiply,
-            Box::new(Expression::Constant(1)),
-            Box::new(Expression::Constant(2)),
+    let expected = AstExp::Binary(
+        AstBinaryOp::Substract,
+        Box::new(AstExp::Binary(
+            AstBinaryOp::Multiply,
+            Box::new(AstExp::Constant(1)),
+            Box::new(AstExp::Constant(2)),
         )),
-        Box::new(Expression::Binary(
-            BinaryOp::Multiply,
-            Box::new(Expression::Constant(3)),
-            Box::new(Expression::Binary(
-                BinaryOp::Add,
-                Box::new(Expression::Constant(4)),
-                Box::new(Expression::Constant(5)),
+        Box::new(AstExp::Binary(
+            AstBinaryOp::Multiply,
+            Box::new(AstExp::Constant(3)),
+            Box::new(AstExp::Binary(
+                AstBinaryOp::Add,
+                Box::new(AstExp::Constant(4)),
+                Box::new(AstExp::Constant(5)),
             )),
         )),
     );

@@ -59,7 +59,7 @@ impl fmt::Display for Function {
     }
 }
 
-impl fmt::Display for Program {
+impl fmt::Display for AsmAst {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Program(fun) => write!(f, "{fun}"),
