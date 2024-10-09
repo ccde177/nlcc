@@ -36,6 +36,7 @@ pub enum Token {
     IsGreaterThan,
     IsLessThanOrEqual,
     IsGreaterThanOrEqual,
+    Assign,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -72,6 +73,7 @@ impl TryFrom<char> for Token {
             '!' => Ok(Self::LogicalNot),
             '<' => Ok(Self::IsLessThan),
             '>' => Ok(Self::IsGreaterThan),
+            '=' => Ok(Self::Assign),
             _ => Err(LexError::UnexpectedChar(c)),
         }
     }
@@ -135,7 +137,7 @@ fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
 
 fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
     let mut buf = String::new();
-    while !input.is_empty() && input[0].is_ascii_alphanumeric() {
+    while !input.is_empty() && (input[0].is_ascii_alphanumeric() || input[0] == '_') {
         let c = input.pop_front().expect("Should never fail");
         buf.push(c);
     }
