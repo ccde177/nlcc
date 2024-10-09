@@ -208,6 +208,7 @@ fn emit_instruction(
             instructions.push(tacky_instruction);
             dst
         }
+        _ => unimplemented!()
     }
 }
 
@@ -220,13 +221,16 @@ fn emit_statement(statement: AstStatement) -> TInstructions {
             instructions.push(TInstruction::Return(value));
             instructions
         }
+        _ => unimplemented!()
     }
 }
 
 fn emit_function(f: AstFunction) -> TFunction {
-    match f {
+    unimplemented!()
+/*    match f {
         AstFunction { name, body } => TFunction::FunDef(name.clone(), emit_statement(body)),
     }
+        */
 }
 
 pub fn emit_tacky(input: Ast) -> TAst {

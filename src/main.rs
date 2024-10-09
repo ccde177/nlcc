@@ -8,6 +8,7 @@ mod lexer;
 mod parser;
 mod tacky;
 mod emission;
+mod semantical_analysis;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -23,6 +24,9 @@ struct Args {
 
     #[arg(long)]
     tacky: bool,
+
+    #[arg(long)]
+    validate: bool,
 
     input: PathBuf,
 }
@@ -58,7 +62,13 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let tacky = tacky::emit_tacky(ast.clone());
+    let validated_ast = semantical_analysis::validate(ast)?;
+    
+    if args.validate {
+        return Ok(());
+    }
+
+    let tacky = tacky::emit_tacky(validated_ast.clone());
 
     if args.tacky {
 	return Ok(());

@@ -11,7 +11,7 @@ pub enum Ast {
     FunDef(AstFunction),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AstFunction {
     pub name: Identifier,
     pub body: AstBlockItems,
@@ -27,14 +27,14 @@ pub enum AstBlockItem {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AstDeclaration {
-    name: Identifier,
-    exp: Option<AstExp>
+    pub name: Identifier,
+    pub init: Option<AstExp>
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AstStatement {
     Return(AstExp),
-    Expression(AstExp),
+    Exp(AstExp),
     Null
 }
 
@@ -99,6 +99,15 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+impl AstExp {
+    pub fn is_var(&self) -> bool {
+        match self {
+            Self::Var(_) => true,
+            _ => false
+        }
+    }
+}
 
 fn expect_token(tokens: &mut Tokens, token: Token) -> Result<(), ParseError> {
     tokens
@@ -275,7 +284,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
         _ => {
             let exp = parse_exp(tokens, 0)?;
             expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Expression(exp))
+            Ok(AstStatement::Exp(exp))
         }
     }
 }
@@ -297,7 +306,7 @@ fn parse_declaration(tokens: &mut Tokens) -> Result<AstDeclaration, ParseError> 
     
     Ok(AstDeclaration {
         name: id,
-        exp
+        init: exp
     })        
 }
 
