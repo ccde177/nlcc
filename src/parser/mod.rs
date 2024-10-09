@@ -14,18 +14,36 @@ pub enum Ast {
 #[derive(Debug, Clone)]
 pub struct AstFunction {
     pub name: Identifier,
-    pub body: AstStatement,
+    pub body: AstBlockItems,
+}
+
+pub type AstBlockItems = Vec<AstBlockItem>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AstBlockItem {
+    S(AstStatement),
+    D(AstDeclaration),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AstDeclaration {
+    name: Identifier,
+    exp: Option<AstExp>
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AstStatement {
     Return(AstExp),
+    Expression(AstExp),
+    Null
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstExp {
     Binary(AstBinaryOp, Box<AstExp>, Box<AstExp>),
     Unary(AstUnaryOp, Box<AstExp>),
+    Assignment(Box<AstExp>, Box<AstExp>),
+    Var(Identifier),
     Constant(u64),
 }
 
@@ -60,18 +78,22 @@ pub enum ParseError {
     MoreTokensThanExpected(Tokens),
     BadExpression(Token),
     ExpectedExpression,
+    BadDeclaration,
+    UnexpectedEof
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::ExpectedButGot(t1, t2) => {
-                write!(f, "Expected token of type {:?} but got {:?}", t2, t1)
+                write!(f, "Expected token of type {:?} but got {:?}", t1, t2)
             }
             Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {:?} but got None", t),
             Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {:?}", ts),
             Self::ExpectedExpression => write!(f, "Expected expression"),
             Self::BadExpression(t) => write!(f, "Bad expression starting with {:?}", t),
+            Self::BadDeclaration => write!(f, "Bad declaration"),
+            Self::UnexpectedEof => write!(f, "Unexpected EOF"),
         }
     }
 }
@@ -85,7 +107,7 @@ fn expect_token(tokens: &mut Tokens, token: Token) -> Result<(), ParseError> {
             if t == token {
                 Ok(())
             } else {
-                Err(ParseError::ExpectedButGot(t.clone(), token.clone()))
+                Err(ParseError::ExpectedButGot(token.clone(), t.clone()))
             }
         })
 }
@@ -156,7 +178,8 @@ fn token_is_binaryop(token: &Token) -> bool {
         | Token::IsLessThan
         | Token::IsLessThanOrEqual
         | Token::IsGreaterThan
-        | Token::IsGreaterThanOrEqual => true,
+        | Token::IsGreaterThanOrEqual
+        | Token::Assign => true,
         _ => false,
     }
 }
@@ -176,6 +199,7 @@ fn get_prec(token: &Token) -> u64 {
         Token::IsNotEqual => 30,
         Token::LogicalAnd => 10,
         Token::LogicalOr => 5,
+        Token::Assign => 1,
         _ => 0
     }
 }
@@ -189,10 +213,16 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
             break;
         }
 
-        let operator = parse_binop(tokens)?;
-        let right = parse_exp(tokens, prec + 1)?;
+        if next_token == Token::Assign {
+            take_token(tokens);
+            let right = parse_exp(tokens, get_prec(&next_token))?;
+            left = AstExp::Assignment(Box::new(left), Box::new(right));
+        } else {
+            let operator = parse_binop(tokens)?;
+            let right = parse_exp(tokens, prec + 1)?;
 
-        left = AstExp::Binary(operator, Box::new(left), Box::new(right));
+            left = AstExp::Binary(operator, Box::new(left), Box::new(right));
+        }
     }
     Ok(left)
 }
@@ -220,32 +250,90 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
             take_token(tokens);
             Ok(AstExp::Constant(inner))
         }
+        Token::Identifier(id) => {
+            let inner = id.clone();
+            take_token(tokens);
+            Ok(AstExp::Var(inner))
+        }
         _ => Err(ParseError::BadExpression(next_token.clone())),
     }
 }
 
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
-    expect_token(tokens, Token::Return)?;
-    let exp = parse_exp(tokens, 0)?;
+    let next = peek(&tokens).ok_or(ParseError::UnexpectedEof)?;
+    match next {
+        Token::Return => {
+            take_token(tokens);
+            let exp = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstStatement::Return(exp))
+        }
+        Token::Semicolon => {
+            take_token(tokens);
+            Ok(AstStatement::Null)
+        }
+        _ => {
+            let exp = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstStatement::Expression(exp))
+        }
+    }
+}
+
+fn parse_declaration(tokens: &mut Tokens) -> Result<AstDeclaration, ParseError> {
+    expect_token(tokens, Token::Int)?;
+    let id = expect_identifier(tokens)?;
+    let exp = match peek(&tokens) {
+        Some(Token::Assign) => {
+            take_token(tokens);
+            let exp = parse_exp(tokens, get_prec(&Token::Assign))?;
+            Some(exp)
+        }
+        Some(Token::Semicolon) => None,
+        _ => return Err(ParseError::BadDeclaration),
+    };
+    
     expect_token(tokens, Token::Semicolon)?;
-    Ok(AstStatement::Return(exp))
+    
+    Ok(AstDeclaration {
+        name: id,
+        exp
+    })        
+}
+
+fn parse_block_item(tokens: &mut Tokens) -> Result<AstBlockItem, ParseError> {
+    match peek(&tokens) {
+        Some(Token::Int) => Ok(AstBlockItem::D(parse_declaration(tokens)?)),
+        Some(_) => Ok(AstBlockItem::S(parse_statement(tokens)?)),
+        None => Err(ParseError::UnexpectedEof),
+    }
+}
+
+fn peek(tokens: &Tokens) -> Option<Token> {
+    tokens.front().map(|t| t.clone())
 }
 
 fn parse_function(tokens: &mut Tokens) -> Result<AstFunction, ParseError> {
+    dbg!(tokens.clone());
     expect_token(tokens, Token::Int)?;
     let identifier = expect_identifier(tokens)?;
     expect_token(tokens, Token::OpenParanth)?;
     expect_token(tokens, Token::Void)?;
     expect_token(tokens, Token::CloseParanth)?;
     expect_token(tokens, Token::OpenCurly)?;
-    let statement = parse_statement(tokens)?;
+    let mut body = AstBlockItems::new();
+    
+    while !tokens.is_empty() && peek(tokens).unwrap() != Token::CloseCurly {
+        let next_block_item = parse_block_item(tokens)?;
+        body.push(next_block_item);
+    }
     expect_token(tokens, Token::CloseCurly)?;
     if !tokens.is_empty() {
         Err(ParseError::MoreTokensThanExpected(tokens.clone()))
     } else {
         Ok(AstFunction {
             name: identifier,
-            body: statement,
+            body,
         })
     }
 }
