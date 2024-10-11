@@ -36,6 +36,11 @@ pub enum Token {
     IsGreaterThan,
     IsLessThanOrEqual,
     IsGreaterThanOrEqual,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    ShiftLeft,
+    ShiftRight,
     Assign
 }
 
@@ -74,6 +79,9 @@ impl TryFrom<char> for Token {
             '<' => Ok(Self::IsLessThan),
             '>' => Ok(Self::IsGreaterThan),
             '=' => Ok(Self::Assign),
+            '&' => Ok(Self::BitwiseAnd),
+            '|' => Ok(Self::BitwiseOr),
+            '^' => Ok(Self::BitwiseXor),
             _ => Err(LexError::UnexpectedChar(c)),
         }
     }
@@ -106,6 +114,8 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
         ('!', '=') => Ok(Token::IsNotEqual),
         ('>', '=') => Ok(Token::IsGreaterThanOrEqual),
         ('<', '=') => Ok(Token::IsLessThanOrEqual),
+        ('<', '<') => Ok(Token::ShiftLeft),
+        ('>', '>') => Ok(Token::ShiftRight),
         _ => Err(LexError::UnexpectedChar(first)),
     };
 
@@ -150,7 +160,7 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
 
     while !input.is_empty() {
         match input[0] {
-            ';' | '{' | '}' | '(' | ')' | '~' | '%' | '*' | '/' => {
+            ';' | '{' | '}' | '(' | ')' | '~' | '%' | '*' | '/' | '^' => {
                 let token = Token::try_from(input[0]).expect("Should never fail");
                 tokens.push_back(token);
                 let _ = input.pop_front();

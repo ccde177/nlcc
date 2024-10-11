@@ -6,6 +6,7 @@ impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Ax => write!(f, "%eax"),
+            Self::Cx => write!(f, "%ecx"),
 	    Self::Dx => write!(f, "%edx"),
             Self::R10 => write!(f, "%r10d"),
 	    Self::R11 => write!(f, "%r11d"),
@@ -39,6 +40,11 @@ impl fmt::Display for BinaryOp {
 	    BinaryOp::Add => write!(f, "addl"),
 	    BinaryOp::Sub => write!(f, "subl"),
 	    BinaryOp::Imul => write!(f, "imull"),
+            BinaryOp::And => write!(f, "andl"),
+            BinaryOp::Or => write!(f, "orl"),
+            BinaryOp::Xor => write!(f, "xorl"),
+            BinaryOp::Shl => write!(f, "sall"),
+            BinaryOp::Shr => write!(f, "sarl"),
 	}
     }
 }
@@ -91,6 +97,8 @@ impl fmt::Display for Instruction {
             Self::Ret => write!(f, "movq %rbp, %rsp\n\tpopq %rbp\n\tret"),
 	    Self::Idiv(op) => write!(f, "idivl {op}"),
 	    Self::Cdq => write!(f, "cdq"),
+            Self::Binary(BinaryOp::Shl, Operand::Reg(Register::Cx), dst) => write!(f, "sall %cl, {dst}"),
+            Self::Binary(BinaryOp::Shr, Operand::Reg(Register::Cx), dst) => write!(f, "sarl %cl, {dst}"),
 	    Self::Binary(op, src, dst) => write!(f, "{op} {src}, {dst}"),
             Self::Cmp(src, dst) => write!(f, "cmpl {src}, {dst}"),
             Self::Jmp(label) => write!(f, "jmp .L{label}"),
@@ -107,6 +115,7 @@ impl fmt::Display for Instruction {
                         Register::Dx => "dl",
                         Register::R10 => "r10b",
                         Register::R11 => "r11b",
+                        Register::Cx => "cx"
                     };
                     write!(f, "set{cond_code} {reg_str}")
                 } else {

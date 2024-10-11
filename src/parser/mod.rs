@@ -62,6 +62,11 @@ pub enum AstBinaryOp {
     LessOrEqual,
     GreaterThan,
     GreaterOrEqual,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    ShiftLeft,
+    ShiftRight
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -166,6 +171,11 @@ fn parse_binop(tokens: &mut Tokens) -> Result<AstBinaryOp, ParseError> {
         Token::IsLessThanOrEqual => Ok(AstBinaryOp::LessOrEqual),
         Token::IsGreaterThan => Ok(AstBinaryOp::GreaterThan),
         Token::IsGreaterThanOrEqual => Ok(AstBinaryOp::GreaterOrEqual),
+        Token::BitwiseAnd => Ok(AstBinaryOp::BitwiseAnd),
+        Token::BitwiseOr => Ok(AstBinaryOp::BitwiseOr),
+        Token::BitwiseXor => Ok(AstBinaryOp::BitwiseXor),
+        Token::ShiftLeft => Ok(AstBinaryOp::ShiftLeft),
+        Token::ShiftRight => Ok(AstBinaryOp::ShiftRight),
         _ => Err(ParseError::BadExpression(next_token.clone())),
     }
 }
@@ -187,6 +197,11 @@ fn token_is_binaryop(token: &Token) -> bool {
             | Token::IsGreaterThan
             | Token::IsGreaterThanOrEqual
             | Token::Assign
+            | Token::BitwiseAnd
+            | Token::BitwiseOr
+            | Token::BitwiseXor
+            | Token::ShiftLeft
+            | Token::ShiftRight
     )
 }
 
@@ -197,12 +212,17 @@ fn get_prec(token: &Token) -> u64 {
         Token::Percent => 50,
         Token::Plus => 45,
         Token::Hyphen => 45,
+        Token::ShiftLeft => 40,
+        Token::ShiftRight => 40,
         Token::IsLessThan => 35,
         Token::IsLessThanOrEqual => 35,
         Token::IsGreaterThan => 35,
         Token::IsGreaterThanOrEqual => 35,
         Token::IsEqual => 30,
         Token::IsNotEqual => 30,
+        Token::BitwiseAnd => 25,
+        Token::BitwiseXor => 20,
+        Token::BitwiseOr => 15,
         Token::LogicalAnd => 10,
         Token::LogicalOr => 5,
         Token::Assign => 1,

@@ -41,6 +41,11 @@ pub enum TBinaryOp {
     IsLessOrEqual,
     IsGreaterThan,
     IsGreaterOrEqual,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    ShiftLeft,
+    ShiftRight
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,6 +62,9 @@ pub enum TUnaryOp {
 }
 
 impl TBinaryOp {
+    pub fn is_shift(&self) -> bool {
+        matches!(self, TBinaryOp::ShiftLeft | TBinaryOp::ShiftRight)
+    }
     pub fn is_div(&self) -> bool {
         matches!(self, TBinaryOp::Divide)
     }
@@ -128,7 +136,12 @@ impl From<AstBinaryOp> for TBinaryOp {
             AstBinaryOp::LessOrEqual => Self::IsLessOrEqual,
             AstBinaryOp::GreaterThan => Self::IsGreaterThan,
             AstBinaryOp::GreaterOrEqual => Self::IsGreaterOrEqual,
-            _ => unimplemented!(),
+            AstBinaryOp::BitwiseAnd => Self::BitwiseAnd,
+            AstBinaryOp::BitwiseOr => Self::BitwiseOr,
+            AstBinaryOp::BitwiseXor => Self::BitwiseXor,
+            AstBinaryOp::ShiftLeft => Self::ShiftLeft,
+            AstBinaryOp::ShiftRight => Self::ShiftRight,
+            _ => unimplemented!()
         }
     }
 }

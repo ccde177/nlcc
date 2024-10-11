@@ -61,6 +61,11 @@ pub enum BinaryOp {
     Add,
     Sub,
     Imul,
+    And,
+    Xor,
+    Or,
+    Shl,
+    Shr
 }
 
 type StackAllocMap = HashMap<Identifier, u64>;
@@ -76,7 +81,7 @@ impl Instruction {
             Self::Mov(src, dst) => src.is_mem() && dst.is_mem(),
             Self::Cmp(src, dst) => src.is_mem() && dst.is_mem(),
             Self::Binary(op, src, dst) => {
-                (*op == BinaryOp::Add || *op == BinaryOp::Sub) && src.is_mem() && dst.is_mem()
+                (*op != BinaryOp::Imul) && src.is_mem() && dst.is_mem()
             }
             _ => false,
         }
@@ -122,6 +127,7 @@ impl Operand {
 pub enum Register {
     Ax,
     Dx,
+    Cx,
     R10,
     R11,
 }
@@ -180,9 +186,14 @@ impl StackAllocator {
 impl From<TBinaryOp> for BinaryOp {
     fn from(value: TBinaryOp) -> Self {
         match value {
-            TBinaryOp::Add => BinaryOp::Add,
-            TBinaryOp::Multiply => BinaryOp::Imul,
-            TBinaryOp::Substract => BinaryOp::Sub,
+            TBinaryOp::Add => Self::Add,
+            TBinaryOp::Multiply => Self::Imul,
+            TBinaryOp::Substract => Self::Sub,
+            TBinaryOp::BitwiseAnd => Self::And,
+            TBinaryOp::BitwiseOr => Self::Or,
+            TBinaryOp::BitwiseXor => Self::Xor,
+            TBinaryOp::ShiftLeft => Self::Shl,
+            TBinaryOp::ShiftRight => Self::Shr,
             _ => unimplemented!(),
         }
     }
@@ -197,7 +208,17 @@ fn tbinary_to_asm(instructions: &mut AsmInstructions, tinstr: TInstruction) {
         let is_div = op.is_div();
         let is_rem = op.is_rem();
 
-        if is_div || is_rem {
+        if op.is_shift() {
+            let cx = Operand::Reg(Register::Cx);
+            let op = BinaryOp::from(op);
+            let mov = Instruction::Mov(src1, dst.clone());
+            let mov2 = Instruction::Mov(src2, cx.clone());
+            let operation = Instruction::Binary(op, cx, dst);
+            instructions.push(mov);
+            instructions.push(mov2);
+            instructions.push(operation);
+            
+        } else if is_div || is_rem {
             let ax = Operand::Reg(Register::Ax);
             let dx = Operand::Reg(Register::Dx);
             let mov1 = Instruction::Mov(src1, ax.clone());
