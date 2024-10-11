@@ -113,7 +113,6 @@ impl fmt::Display for Instruction {
                     write!(f, "set{cond_code} {operand}")
                 }
             }
-            _ => unimplemented!(),
         }
     }
 }

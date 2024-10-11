@@ -36,7 +36,7 @@ pub enum Token {
     IsGreaterThan,
     IsLessThanOrEqual,
     IsGreaterThanOrEqual,
-    Assign,
+    Assign
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -109,7 +109,7 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
         _ => Err(LexError::UnexpectedChar(first)),
     };
 
-    if let Ok(_) = result {
+    if result.is_ok() {
         input.pop_front();
     }
 
@@ -131,7 +131,7 @@ fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
     }
 
     buf.parse()
-        .map(|i| Token::Constant(i))
+        .map(Token::Constant)
         .map_err(|_| LexError::BadConstant(buf.clone()))
 }
 

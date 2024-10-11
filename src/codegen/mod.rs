@@ -106,24 +106,15 @@ impl Instruction {
 
 impl Operand {
     fn is_mem(&self) -> bool {
-        match self {
-            Self::Stack(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Stack(_))
     }
 
     pub fn is_reg(&self) -> bool {
-        match self {
-            Self::Reg(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Reg(_))
     }
 
     fn is_imm(&self) -> bool {
-        match self {
-            Self::Imm(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Imm(_))
     }
 }
 

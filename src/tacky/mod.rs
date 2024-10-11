@@ -58,23 +58,23 @@ pub enum TUnaryOp {
 
 impl TBinaryOp {
     pub fn is_div(&self) -> bool {
-        *self == TBinaryOp::Divide
+        matches!(self, TBinaryOp::Divide)
     }
 
     pub fn is_rem(&self) -> bool {
-        *self == TBinaryOp::Reminder
+        matches!(self, TBinaryOp::Reminder)
     }
 
     pub fn is_comp(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Self::IsEqual
                 | Self::IsNotEqual
                 | Self::IsLessThan
                 | Self::IsLessOrEqual
                 | Self::IsGreaterThan
-                | Self::IsGreaterOrEqual => true,
-            _ => false
-        }
+                | Self::IsGreaterOrEqual
+        )
     }
 }
 
@@ -110,7 +110,6 @@ impl From<AstUnaryOp> for TUnaryOp {
             AstUnaryOp::Complement => TUnaryOp::Complement,
             AstUnaryOp::Negate => TUnaryOp::Negate,
             AstUnaryOp::LogicalNot => TUnaryOp::LogicalNot,
-            _ => unimplemented!(),
         }
     }
 }
@@ -134,11 +133,7 @@ impl From<AstBinaryOp> for TBinaryOp {
     }
 }
 
-fn emit_instruction(
-    instructions: &mut TInstructions,
-    e: AstExp,
-    ng: &mut NameGenerator,
-) -> TValue {
+fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGenerator) -> TValue {
     match e {
         AstExp::Constant(u) => TValue::Constant(u),
         AstExp::Unary(op, exp) => {
@@ -151,51 +146,51 @@ fn emit_instruction(
             dst
         }
         AstExp::Binary(AstBinaryOp::LogicalAnd, src, dst) => {
-            let false_label = ng.get_label(); 
+            let false_label = ng.get_label();
             let label_end = ng.get_label();
             let result = TValue::Var(ng.get_name());
             let copy0 = TInstruction::Copy(TValue::Constant(0), result.clone());
             let copy1 = TInstruction::Copy(TValue::Constant(1), result.clone());
             let jumpend = TInstruction::Jump(label_end.clone());
-           
+
             let v1 = emit_instruction(instructions, src.as_ref().clone(), ng);
             let jz1 = TInstruction::JumpIfZero(v1.clone(), false_label.clone());
             instructions.push(jz1);
-            
+
             let v2 = emit_instruction(instructions, dst.as_ref().clone(), ng);
             let jz2 = TInstruction::JumpIfZero(v2.clone(), false_label.clone());
             instructions.push(jz2);
-            
+
             instructions.push(copy1);
             instructions.push(jumpend);
             instructions.push(TInstruction::Label(false_label));
             instructions.push(copy0);
             instructions.push(TInstruction::Label(label_end));
-                        
+
             result
         }
         AstExp::Binary(AstBinaryOp::LogicalOr, src, dst) => {
-            let true_label = ng.get_label(); 
+            let true_label = ng.get_label();
             let label_end = ng.get_label();
             let result = TValue::Var(ng.get_name());
             let copy0 = TInstruction::Copy(TValue::Constant(0), result.clone());
             let copy1 = TInstruction::Copy(TValue::Constant(1), result.clone());
             let jumpend = TInstruction::Jump(label_end.clone());
-           
+
             let v1 = emit_instruction(instructions, src.as_ref().clone(), ng);
             let jnz1 = TInstruction::JumpIfNotZero(v1.clone(), true_label.clone());
             instructions.push(jnz1);
-            
+
             let v2 = emit_instruction(instructions, dst.as_ref().clone(), ng);
             let jiz2 = TInstruction::JumpIfNotZero(v2.clone(), true_label.clone());
             instructions.push(jiz2);
-            
+
             instructions.push(copy0);
             instructions.push(jumpend);
             instructions.push(TInstruction::Label(true_label));
             instructions.push(copy1);
             instructions.push(TInstruction::Label(label_end));
-                        
+
             result
         }
         AstExp::Binary(op, exp1, exp2) => {
@@ -208,29 +203,63 @@ fn emit_instruction(
             instructions.push(tacky_instruction);
             dst
         }
-        _ => unimplemented!()
+        AstExp::Assignment(var, rhs) => {
+            let name = match *var {
+                AstExp::Var(name) => name,
+                _ => unreachable!(),
+            };
+            let rhs = emit_instruction(instructions, *rhs, ng);
+            let var = TValue::Var(name);
+            let copy = TInstruction::Copy(rhs, var.clone());
+            instructions.push(copy);
+            var
+        }
+        AstExp::Var(name) => TValue::Var(name.clone()),
     }
 }
 
-fn emit_statement(statement: AstStatement) -> TInstructions {
-    let mut instructions = TInstructions::new();
-    let mut ng = NameGenerator::new();
+fn emit_statement(
+    statement: AstStatement,
+    instructions: &mut TInstructions,
+    ng: &mut NameGenerator,
+) {
     match statement {
         AstStatement::Return(e) => {
-            let value = emit_instruction(&mut instructions, e, &mut ng);
+            let value = emit_instruction(instructions, e, ng);
             instructions.push(TInstruction::Return(value));
-            instructions
         }
-        _ => unimplemented!()
+        AstStatement::Exp(e) => {
+            emit_instruction(instructions, e, ng);
+        }
+        AstStatement::Null => (),
     }
+}
+
+fn emit_declaration(d: AstDeclaration, instructions: &mut TInstructions, ng: &mut NameGenerator) {
+    if let Some(init) = d.init {
+        let rhs = emit_instruction(instructions, init, ng);
+        let var = TValue::Var(d.name.clone());
+        let copy = TInstruction::Copy(rhs, var.clone());
+        instructions.push(copy);
+    }
+}
+
+fn emit_block_items(blockitems: AstBlockItems) -> TInstructions {
+    let mut instructions = TInstructions::new();
+    let mut ng = NameGenerator::new();
+    for block in blockitems.into_iter() {
+        match block {
+            AstBlockItem::S(s) => emit_statement(s, &mut instructions, &mut ng),
+            AstBlockItem::D(d) => emit_declaration(d, &mut instructions, &mut ng),
+        }
+    }
+    instructions
 }
 
 fn emit_function(f: AstFunction) -> TFunction {
-    unimplemented!()
-/*    match f {
-        AstFunction { name, body } => TFunction::FunDef(name.clone(), emit_statement(body)),
-    }
-        */
+    let mut body = emit_block_items(f.body);
+    body.push(TInstruction::Return(TValue::Constant(0)));
+    TFunction::FunDef(f.name, body)
 }
 
 pub fn emit_tacky(input: Ast) -> TAst {

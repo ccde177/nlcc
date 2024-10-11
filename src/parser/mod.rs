@@ -28,14 +28,14 @@ pub enum AstBlockItem {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AstDeclaration {
     pub name: Identifier,
-    pub init: Option<AstExp>
+    pub init: Option<AstExp>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AstStatement {
     Return(AstExp),
     Exp(AstExp),
-    Null
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +79,7 @@ pub enum ParseError {
     BadExpression(Token),
     ExpectedExpression,
     BadDeclaration,
-    UnexpectedEof
+    UnexpectedEof,
 }
 
 impl fmt::Display for ParseError {
@@ -102,10 +102,7 @@ impl std::error::Error for ParseError {}
 
 impl AstExp {
     pub fn is_var(&self) -> bool {
-        match self {
-            Self::Var(_) => true,
-            _ => false
-        }
+        matches!(self, Self::Var(_))
     }
 }
 
@@ -174,23 +171,23 @@ fn parse_binop(tokens: &mut Tokens) -> Result<AstBinaryOp, ParseError> {
 }
 
 fn token_is_binaryop(token: &Token) -> bool {
-    match token {
+    matches!(
+        token,
         Token::Plus
-        | Token::Hyphen
-        | Token::Asterisk
-        | Token::FSlash
-        | Token::Percent
-        | Token::LogicalAnd
-        | Token::LogicalOr
-        | Token::IsEqual
-        | Token::IsNotEqual
-        | Token::IsLessThan
-        | Token::IsLessThanOrEqual
-        | Token::IsGreaterThan
-        | Token::IsGreaterThanOrEqual
-        | Token::Assign => true,
-        _ => false,
-    }
+            | Token::Hyphen
+            | Token::Asterisk
+            | Token::FSlash
+            | Token::Percent
+            | Token::LogicalAnd
+            | Token::LogicalOr
+            | Token::IsEqual
+            | Token::IsNotEqual
+            | Token::IsLessThan
+            | Token::IsLessThanOrEqual
+            | Token::IsGreaterThan
+            | Token::IsGreaterThanOrEqual
+            | Token::Assign
+    )
 }
 
 fn get_prec(token: &Token) -> u64 {
@@ -209,7 +206,7 @@ fn get_prec(token: &Token) -> u64 {
         Token::LogicalAnd => 10,
         Token::LogicalOr => 5,
         Token::Assign => 1,
-        _ => 0
+        _ => 0,
     }
 }
 
@@ -269,7 +266,7 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
 }
 
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
-    let next = peek(&tokens).ok_or(ParseError::UnexpectedEof)?;
+    let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
         Token::Return => {
             take_token(tokens);
@@ -292,7 +289,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
 fn parse_declaration(tokens: &mut Tokens) -> Result<AstDeclaration, ParseError> {
     expect_token(tokens, Token::Int)?;
     let id = expect_identifier(tokens)?;
-    let exp = match peek(&tokens) {
+    let exp = match peek(tokens) {
         Some(Token::Assign) => {
             take_token(tokens);
             let exp = parse_exp(tokens, get_prec(&Token::Assign))?;
@@ -301,17 +298,17 @@ fn parse_declaration(tokens: &mut Tokens) -> Result<AstDeclaration, ParseError> 
         Some(Token::Semicolon) => None,
         _ => return Err(ParseError::BadDeclaration),
     };
-    
+
     expect_token(tokens, Token::Semicolon)?;
-    
+
     Ok(AstDeclaration {
         name: id,
-        init: exp
-    })        
+        init: exp,
+    })
 }
 
 fn parse_block_item(tokens: &mut Tokens) -> Result<AstBlockItem, ParseError> {
-    match peek(&tokens) {
+    match peek(tokens) {
         Some(Token::Int) => Ok(AstBlockItem::D(parse_declaration(tokens)?)),
         Some(_) => Ok(AstBlockItem::S(parse_statement(tokens)?)),
         None => Err(ParseError::UnexpectedEof),
@@ -319,11 +316,10 @@ fn parse_block_item(tokens: &mut Tokens) -> Result<AstBlockItem, ParseError> {
 }
 
 fn peek(tokens: &Tokens) -> Option<Token> {
-    tokens.front().map(|t| t.clone())
+    tokens.front().cloned()
 }
 
 fn parse_function(tokens: &mut Tokens) -> Result<AstFunction, ParseError> {
-    dbg!(tokens.clone());
     expect_token(tokens, Token::Int)?;
     let identifier = expect_identifier(tokens)?;
     expect_token(tokens, Token::OpenParanth)?;
@@ -331,7 +327,7 @@ fn parse_function(tokens: &mut Tokens) -> Result<AstFunction, ParseError> {
     expect_token(tokens, Token::CloseParanth)?;
     expect_token(tokens, Token::OpenCurly)?;
     let mut body = AstBlockItems::new();
-    
+
     while !tokens.is_empty() && peek(tokens).unwrap() != Token::CloseCurly {
         let next_block_item = parse_block_item(tokens)?;
         body.push(next_block_item);
@@ -352,6 +348,5 @@ fn parse_program(tokens: &mut Tokens) -> Result<Ast, ParseError> {
 }
 
 pub fn parse(mut tokens: Tokens) -> Result<Ast, ParseError> {
-    Ok(parse_program(&mut tokens)?)
+    parse_program(&mut tokens)
 }
-
