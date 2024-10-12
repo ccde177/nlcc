@@ -258,7 +258,27 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             var
         }
         AstExp::Var(name) => TValue::Var(name.clone()),
-        _ => unimplemented!()
+        AstExp::Conditional{condition, then, els} => {
+            let c = emit_instruction(instructions, *condition, ng);
+            let e2 = ng.get_label();
+            let jz = TInstruction::JumpIfZero(c, e2.clone());
+            instructions.push(jz);
+            let v1 = emit_instruction(instructions, *then, ng);
+            let result = TValue::Var(ng.get_name());
+            let copy = TInstruction::Copy(v1, result.clone());
+            instructions.push(copy);
+            let end = ng.get_label();
+            let jmp_end = TInstruction::Jump(end.clone());
+            instructions.push(jmp_end);
+            let e2_label = TInstruction::Label(e2);
+            instructions.push(e2_label);
+            let v2 = emit_instruction(instructions, *els, ng);
+            let copy = TInstruction::Copy(v2, result.clone());
+            instructions.push(copy);
+            let end_label = TInstruction::Label(end);
+            instructions.push(end_label);
+            result
+        }
     }
 }
 
@@ -268,6 +288,26 @@ fn emit_statement(
     ng: &mut NameGenerator,
 ) {
     match statement {
+        AstStatement::If{condition, then, els} => {
+            let c = emit_instruction(instructions, condition, ng);
+            let end_or_else = ng.get_label();
+            let jz = TInstruction::JumpIfZero(c, end_or_else.clone());
+            instructions.push(jz);
+            emit_statement(*then, instructions, ng);
+            let end_or_else = TInstruction::Label(end_or_else);
+            if els.is_some() {
+                let els_label = end_or_else;
+                let end = ng.get_name();
+                let jump_end = TInstruction::Jump(end.clone());
+                instructions.push(jump_end);
+                instructions.push(els_label);
+                emit_statement(*els.unwrap(), instructions, ng);
+                let end_label = TInstruction::Label(end);
+                instructions.push(end_label);
+            } else {
+                instructions.push(end_or_else);
+            }
+        }
         AstStatement::Return(e) => {
             let value = emit_instruction(instructions, e, ng);
             instructions.push(TInstruction::Return(value));
@@ -276,7 +316,6 @@ fn emit_statement(
             emit_instruction(instructions, e, ng);
         }
         AstStatement::Null => (),
-        _ => unimplemented!()
     }
 }
 

@@ -67,22 +67,41 @@ fn resolve_declaration(
 
 fn resolve_statement(st: AstStatement, vm: &mut VariableMap) -> Result<AstStatement> {
     match st {
+        AstStatement::If{condition,then, els} => {
+            let condition = resolve_exp(condition, vm)?;
+            let then = Box::new(resolve_statement(*then, vm)?);
+            let els = els.map_or(Ok(None), |bs| resolve_statement(*bs, vm).map(Box::new).map(Some))?;
+            Ok(AstStatement::If{
+                condition,
+                then,
+                els
+            })
+        },
         AstStatement::Return(e) => Ok(AstStatement::Return(resolve_exp(e, vm)?)),
         AstStatement::Exp(e) => Ok(AstStatement::Exp(resolve_exp(e, vm)?)),
         AstStatement::Null => Ok(AstStatement::Null),
-        _ => unimplemented!()
     }
 }
 
 fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
     match exp {
+        AstExp::Conditional { condition, then, els } => {
+            let condition = resolve_exp(*condition, vm).map(Box::new)?;
+            let then = resolve_exp(*then, vm).map(Box::new)?;
+            let els = resolve_exp(*els, vm).map(Box::new)?;
+            Ok(AstExp::Conditional{
+                condition,
+                then,
+                els
+            })
+        }
         AstExp::Assignment(left, right) => {
             if !left.as_ref().is_var() {
                 return Err(SemAnalysisError::WrongLvalue(*left));
             }
-            let left = resolve_exp(*left, vm)?;
-            let right = resolve_exp(*right, vm)?;
-            Ok(AstExp::Assignment(Box::new(left), Box::new(right)))
+            let left = resolve_exp(*left, vm).map(Box::new)?;
+            let right = resolve_exp(*right, vm).map(Box::new)?;
+            Ok(AstExp::Assignment(left, right))
         }
         AstExp::Unary(
             op @ (AstUnaryOp::PostfixIncrement
@@ -112,7 +131,6 @@ fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
             Ok(AstExp::Binary(op, Box::new(src), Box::new(dst)))
         }
         AstExp::Constant(_) => Ok(exp),
-        _ => unimplemented!()
     }
 }
 
