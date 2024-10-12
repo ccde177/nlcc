@@ -11,7 +11,7 @@ fn test_basic1() {
         Token::Void,
         Token::CloseParanth,
         Token::OpenCurly,
-        Token::CloseCurly
+        Token::CloseCurly,
     ]);
     assert_eq!(Ok(expected), lexed);
 }
@@ -60,7 +60,7 @@ fn test_precedence() {
         Token::Plus,
         Token::Constant(1),
         Token::Semicolon,
-        Token::CloseCurly
+        Token::CloseCurly,
     ]);
     assert_eq!(Ok(expected), lexed);
 }

@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::process::Command;
 
 mod codegen;
+mod emission;
 mod lexer;
 mod parser;
-mod tacky;
-mod emission;
 mod semantical_analysis;
+mod tacky;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -64,7 +64,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let validated_ast = semantical_analysis::validate(ast)?;
-    
+
     if args.validate {
         return Ok(());
     }
@@ -73,16 +73,16 @@ fn main() -> anyhow::Result<()> {
 
     if args.tacky {
         dbg!(tacky);
-	return Ok(());
+        return Ok(());
     }
-    
+
     let asm = codegen::codegen(tacky);
 
     if args.codegen {
         dbg!(asm);
         return Ok(());
     }
-    
+
     let mut asm_file = args.input.clone();
     asm_file.set_extension("s");
     fs::write(&asm_file, asm.to_string())?;

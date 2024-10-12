@@ -2,19 +2,15 @@ use super::*;
 
 #[test]
 fn test_shortcircuiting_and() {
-    let body = vec![AstBlockItem::S(AstStatement::Return(
-        AstExp::Binary(
-            AstBinaryOp::LogicalAnd,
-            Box::new(AstExp::Constant(1)),
-            Box::new(AstExp::Constant(2))
-        )
-    ))];
-    let ast = Ast::FunDef(
-        AstFunction {
-            name: "".into(),
-            body
-        }
-    );
+    let body = vec![AstBlockItem::S(AstStatement::Return(AstExp::Binary(
+        AstBinaryOp::LogicalAnd,
+        Box::new(AstExp::Constant(1)),
+        Box::new(AstExp::Constant(2)),
+    )))];
+    let ast = Ast::FunDef(AstFunction {
+        name: "".into(),
+        body,
+    });
 
     let tast = emit_tacky(ast);
     let expected_tinstructions = TInstructions::from(vec![
@@ -39,27 +35,21 @@ fn test_shortcircuiting_and() {
         TInstruction::Return(TValue::Var("tmp.0".into())),
         TInstruction::Return(TValue::Constant(0)),
     ]);
-    let expected = TAst::Program(
-        TFunction::FunDef("".into(), expected_tinstructions)
-    );
+    let expected = TAst::Program(TFunction::FunDef("".into(), expected_tinstructions));
     assert_eq!(expected, tast);
 }
 
 #[test]
 fn test_shortcircuiting_or() {
-    let body = vec![AstBlockItem::S(AstStatement::Return(
-        AstExp::Binary(
-            AstBinaryOp::LogicalOr,
-            Box::new(AstExp::Constant(1)),
-            Box::new(AstExp::Constant(2))
-        )
-    ))];
-    let ast = Ast::FunDef(
-        AstFunction {
-            name: "".into(),
-            body
-        }
-    );
+    let body = vec![AstBlockItem::S(AstStatement::Return(AstExp::Binary(
+        AstBinaryOp::LogicalOr,
+        Box::new(AstExp::Constant(1)),
+        Box::new(AstExp::Constant(2)),
+    )))];
+    let ast = Ast::FunDef(AstFunction {
+        name: "".into(),
+        body,
+    });
 
     let tast = emit_tacky(ast);
     let expected_tinstructions = TInstructions::from(vec![
@@ -82,10 +72,8 @@ fn test_shortcircuiting_or() {
         TInstruction::Copy(TValue::Constant(1), TValue::Var("tmp.0".into())),
         TInstruction::Label("label_1".into()),
         TInstruction::Return(TValue::Var("tmp.0".into())),
-        TInstruction::Return(TValue::Constant(0))
+        TInstruction::Return(TValue::Constant(0)),
     ]);
-    let expected = TAst::Program(
-        TFunction::FunDef("".into(), expected_tinstructions)
-    );
+    let expected = TAst::Program(TFunction::FunDef("".into(), expected_tinstructions));
     assert_eq!(expected, tast);
 }

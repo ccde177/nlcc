@@ -52,6 +52,10 @@ pub enum Token {
     AssignShr,
     AssignShl,
     Assign,
+    If,
+    Else,
+    QuestionMark,
+    Colon
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -86,11 +90,11 @@ impl Token {
                 | Self::AssignShl
         )
     }
-    
+
     pub fn is_incdec(&self) -> bool {
         matches!(self, Self::Increment | Self::Decrement)
     }
-    
+
     pub fn compound_to_single(&self) -> Self {
         match self {
             Self::AssignAdd => Self::Plus,
@@ -103,7 +107,7 @@ impl Token {
             Self::AssignXor => Self::BitwiseXor,
             Self::AssignShl => Self::ShiftLeft,
             Self::AssignShr => Self::ShiftRight,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -130,6 +134,8 @@ impl TryFrom<char> for Token {
             '&' => Ok(Self::BitwiseAnd),
             '|' => Ok(Self::BitwiseOr),
             '^' => Ok(Self::BitwiseXor),
+            ':' => Ok(Self::Colon),
+            '?' => Ok(Self::QuestionMark),
             _ => Err(LexError::UnexpectedChar(c)),
         }
     }
@@ -141,6 +147,8 @@ impl From<String> for Token {
             "int" => Self::Int,
             "return" => Self::Return,
             "void" => Self::Void,
+            "if" => Self::If,
+            "else" => Self::Else,
             _ => Self::Identifier(s),
         }
     }
@@ -230,7 +238,7 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
 
     while !input.is_empty() {
         match input[0] {
-            ';' | '{' | '}' | '(' | ')' | '~'  => {
+            ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' => {
                 let token = Token::try_from(input[0]).expect("Should never fail");
                 tokens.push_back(token);
                 let _ = input.pop_front();

@@ -33,6 +33,11 @@ pub struct AstDeclaration {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AstStatement {
+    If {
+        condition: AstExp,
+        then: Box<AstStatement>,
+        els: Option<Box<AstStatement>>,
+    },
     Return(AstExp),
     Exp(AstExp),
     Null,
@@ -40,6 +45,11 @@ pub enum AstStatement {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstExp {
+    Conditional {
+        condition: Box<AstExp>,
+        then: Box<AstExp>,
+        els: Box<AstExp>,
+    },
     Binary(AstBinaryOp, Box<AstExp>, Box<AstExp>),
     Unary(AstUnaryOp, Box<AstExp>),
     Assignment(Box<AstExp>, Box<AstExp>),
@@ -220,6 +230,7 @@ fn token_is_binaryop(token: &Token) -> bool {
             | Token::AssignShr
             | Token::Increment
             | Token::Decrement
+            | Token::QuestionMark
     )
 }
 
@@ -243,6 +254,7 @@ fn get_prec(token: &Token) -> u64 {
         Token::BitwiseOr => 15,
         Token::LogicalAnd => 10,
         Token::LogicalOr => 5,
+        Token::QuestionMark => 3,
         Token::Assign => 1,
         Token::AssignAdd
         | Token::AssignSub
@@ -259,6 +271,16 @@ fn get_prec(token: &Token) -> u64 {
     }
 }
 
+fn parse_conditional_middle(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
+    let t = take_token(tokens).ok_or(ParseError::UnexpectedEof)?;
+    if t != Token::QuestionMark {
+        return Err(ParseError::ExpectedButGot(Token::QuestionMark, t));
+    }
+    let inner = parse_exp(tokens, 0)?;
+    expect_token(tokens, Token::Colon)?;
+    Ok(inner)
+}
+
 fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
     let mut left = parse_factor(tokens)?;
     while !tokens.is_empty() {
@@ -268,7 +290,15 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
             break;
         }
 
-        if next_token.is_incdec() {
+        if next_token == Token::QuestionMark {
+            let middle = parse_conditional_middle(tokens)?;
+            let right = parse_exp(tokens, prec)?;
+            left = AstExp::Conditional{
+                condition: Box::new(left),
+                then: Box::new(middle),
+                els: Box::new(right),
+            };
+        } else if next_token.is_incdec() {
             take_token(tokens);
             let op = if matches!(next_token, Token::Increment) {
                 AstUnaryOp::PostfixIncrement
@@ -302,7 +332,7 @@ fn prefix_to_postfix(op: AstUnaryOp) -> AstUnaryOp {
     match op {
         AstUnaryOp::PrefixIncrement => AstUnaryOp::PostfixIncrement,
         AstUnaryOp::PrefixDecrement => AstUnaryOp::PostfixDecrement,
-        _ => op
+        _ => op,
     }
 }
 
@@ -322,7 +352,10 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
             take_token(tokens);
             let inner_exp = parse_exp(tokens, 0)?;
             expect_token(tokens, Token::CloseParanth)?;
-            if matches!(tokens.front(), Some(Token::Increment) | Some(Token::Decrement)) {
+            if matches!(
+                tokens.front(),
+                Some(Token::Increment) | Some(Token::Decrement)
+            ) {
                 let operator = parse_unary(tokens)?;
                 let operator = prefix_to_postfix(operator);
                 Ok(AstExp::Unary(operator, Box::new(inner_exp)))
@@ -339,7 +372,10 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
             let inner = id.clone();
             let var = AstExp::Var(inner);
             take_token(tokens);
-            if matches!(tokens.front(), Some(Token::Increment) | Some(Token::Decrement)) {
+            if matches!(
+                tokens.front(),
+                Some(Token::Increment) | Some(Token::Decrement)
+            ) {
                 let operator = parse_unary(tokens)?;
                 let operator = prefix_to_postfix(operator);
                 Ok(AstExp::Unary(operator, Box::new(var)))
@@ -354,6 +390,24 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
     let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
+        Token::If => {
+            take_token(tokens);
+            expect_token(tokens, Token::OpenParanth)?;
+            let exp = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::CloseParanth)?;
+            let then = parse_statement(tokens)?;
+            let mut els = None;
+            if peek(tokens).filter(|t| *t == Token::Else).is_some() {
+                take_token(tokens);
+                els = Some(Box::new(parse_statement(tokens)?));
+            }
+
+            Ok(AstStatement::If {
+                condition: exp,
+                then: Box::new(then),
+                els,
+            })
+        }
         Token::Return => {
             take_token(tokens);
             let exp = parse_exp(tokens, 0)?;

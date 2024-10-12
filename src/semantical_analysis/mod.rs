@@ -65,21 +65,16 @@ fn resolve_declaration(
     })
 }
 
-fn resolve_statement(
-    st: AstStatement,
-    vm: &mut VariableMap,
-) -> Result<AstStatement> {
+fn resolve_statement(st: AstStatement, vm: &mut VariableMap) -> Result<AstStatement> {
     match st {
         AstStatement::Return(e) => Ok(AstStatement::Return(resolve_exp(e, vm)?)),
         AstStatement::Exp(e) => Ok(AstStatement::Exp(resolve_exp(e, vm)?)),
         AstStatement::Null => Ok(AstStatement::Null),
+        _ => unimplemented!()
     }
 }
 
-fn resolve_exp(
-    exp: AstExp,
-    vm: &mut VariableMap,
-) -> Result<AstExp> {
+fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
     match exp {
         AstExp::Assignment(left, right) => {
             if !left.as_ref().is_var() {
@@ -89,7 +84,13 @@ fn resolve_exp(
             let right = resolve_exp(*right, vm)?;
             Ok(AstExp::Assignment(Box::new(left), Box::new(right)))
         }
-        AstExp::Unary(op @ (AstUnaryOp::PostfixIncrement | AstUnaryOp::PrefixIncrement | AstUnaryOp::PostfixDecrement | AstUnaryOp::PrefixDecrement), e) => {
+        AstExp::Unary(
+            op @ (AstUnaryOp::PostfixIncrement
+            | AstUnaryOp::PrefixIncrement
+            | AstUnaryOp::PostfixDecrement
+            | AstUnaryOp::PrefixDecrement),
+            e,
+        ) => {
             let exp = resolve_exp(*e, vm)?;
             if !exp.is_var() {
                 Err(SemAnalysisError::WrongLvalue(exp))
@@ -97,11 +98,10 @@ fn resolve_exp(
                 Ok(AstExp::Unary(op, Box::new(exp)))
             }
         }
-        AstExp::Var(name) => {
-            vm.get(&name)
-                .ok_or(SemAnalysisError::VariableNotDeclared(name.clone()))
-                .map(|n| AstExp::Var(n.to_string()))
-        }
+        AstExp::Var(name) => vm
+            .get(&name)
+            .ok_or(SemAnalysisError::VariableNotDeclared(name.clone()))
+            .map(|n| AstExp::Var(n.to_string())),
         AstExp::Unary(op, exp) => {
             let exp = resolve_exp(*exp, vm)?;
             Ok(AstExp::Unary(op, Box::new(exp)))
@@ -112,6 +112,7 @@ fn resolve_exp(
             Ok(AstExp::Binary(op, Box::new(src), Box::new(dst)))
         }
         AstExp::Constant(_) => Ok(exp),
+        _ => unimplemented!()
     }
 }
 
@@ -139,10 +140,7 @@ pub fn validate(ast: Ast) -> Result<Ast> {
         Ast::FunDef(function) => {
             let name = function.name;
             let body = variable_resolution(function.body)?;
-            Ok(Ast::FunDef(AstFunction{
-                name,
-                body
-            }))
+            Ok(Ast::FunDef(AstFunction { name, body }))
         }
     }
 }

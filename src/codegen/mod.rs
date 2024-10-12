@@ -65,7 +65,7 @@ pub enum BinaryOp {
     Xor,
     Or,
     Shl,
-    Shr
+    Shr,
 }
 
 type StackAllocMap = HashMap<Identifier, u64>;
@@ -80,9 +80,7 @@ impl Instruction {
         match self {
             Self::Mov(src, dst) => src.is_mem() && dst.is_mem(),
             Self::Cmp(src, dst) => src.is_mem() && dst.is_mem(),
-            Self::Binary(op, src, dst) => {
-                (*op != BinaryOp::Imul) && src.is_mem() && dst.is_mem()
-            }
+            Self::Binary(op, src, dst) => (*op != BinaryOp::Imul) && src.is_mem() && dst.is_mem(),
             _ => false,
         }
     }
@@ -217,7 +215,6 @@ fn tbinary_to_asm(instructions: &mut AsmInstructions, tinstr: TInstruction) {
             instructions.push(mov);
             instructions.push(mov2);
             instructions.push(operation);
-            
         } else if is_div || is_rem {
             let ax = Operand::Reg(Register::Ax);
             let dx = Operand::Reg(Register::Dx);

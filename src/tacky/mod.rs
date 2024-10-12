@@ -45,7 +45,7 @@ pub enum TBinaryOp {
     BitwiseOr,
     BitwiseXor,
     ShiftLeft,
-    ShiftRight
+    ShiftRight,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -118,7 +118,7 @@ impl From<AstUnaryOp> for TUnaryOp {
             AstUnaryOp::Complement => TUnaryOp::Complement,
             AstUnaryOp::Negate => TUnaryOp::Negate,
             AstUnaryOp::LogicalNot => TUnaryOp::LogicalNot,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
@@ -142,7 +142,7 @@ impl From<AstBinaryOp> for TBinaryOp {
             AstBinaryOp::BitwiseXor => Self::BitwiseXor,
             AstBinaryOp::ShiftLeft => Self::ShiftLeft,
             AstBinaryOp::ShiftRight => Self::ShiftRight,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
@@ -258,6 +258,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             var
         }
         AstExp::Var(name) => TValue::Var(name.clone()),
+        _ => unimplemented!()
     }
 }
 
@@ -275,6 +276,7 @@ fn emit_statement(
             emit_instruction(instructions, e, ng);
         }
         AstStatement::Null => (),
+        _ => unimplemented!()
     }
 }
 
