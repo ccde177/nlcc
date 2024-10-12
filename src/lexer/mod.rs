@@ -41,7 +41,17 @@ pub enum Token {
     BitwiseXor,
     ShiftLeft,
     ShiftRight,
-    Assign
+    AssignAdd,
+    AssignSub,
+    AssignMul,
+    AssignDiv,
+    AssignMod,
+    AssignAnd,
+    AssignOr,
+    AssignXor,
+    AssignShr,
+    AssignShl,
+    Assign,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -56,6 +66,44 @@ impl fmt::Display for LexError {
         match self {
             Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
             Self::BadConstant(s) => write!(f, "Bad constant: {s}"),
+        }
+    }
+}
+
+impl Token {
+    pub fn is_compound_assign(&self) -> bool {
+        matches!(
+            self,
+            Self::AssignAdd
+                | Self::AssignSub
+                | Self::AssignMul
+                | Self::AssignDiv
+                | Self::AssignMod
+                | Self::AssignAnd
+                | Self::AssignOr
+                | Self::AssignXor
+                | Self::AssignShr
+                | Self::AssignShl
+        )
+    }
+    
+    pub fn is_incdec(&self) -> bool {
+        matches!(self, Self::Increment | Self::Decrement)
+    }
+    
+    pub fn compound_to_single(&self) -> Self {
+        match self {
+            Self::AssignAdd => Self::Plus,
+            Self::AssignMul => Self::Asterisk,
+            Self::AssignSub => Self::Hyphen,
+            Self::AssignDiv => Self::FSlash,
+            Self::AssignMod => Self::Percent,
+            Self::AssignAnd => Self::BitwiseAnd,
+            Self::AssignOr => Self::BitwiseOr,
+            Self::AssignXor => Self::BitwiseXor,
+            Self::AssignShl => Self::ShiftLeft,
+            Self::AssignShr => Self::ShiftRight,
+            _ => unreachable!()
         }
     }
 }
@@ -105,6 +153,20 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
         return Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first));
     }
 
+    if input.len() > 2
+        && (matches!((first, input[0], input[1]), ('>', '>', '='))
+            || matches!((first, input[0], input[1]), ('<', '<', '=')))
+    {
+        let result = match first {
+            '<' => Token::AssignShl,
+            '>' => Token::AssignShr,
+            _ => unreachable!(),
+        };
+        input.pop_front();
+        input.pop_front();
+        return Ok(result);
+    }
+
     let result = match (first, input[0]) {
         ('-', '-') => Ok(Token::Decrement),
         ('+', '+') => Ok(Token::Increment),
@@ -116,6 +178,14 @@ fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
         ('<', '=') => Ok(Token::IsLessThanOrEqual),
         ('<', '<') => Ok(Token::ShiftLeft),
         ('>', '>') => Ok(Token::ShiftRight),
+        ('+', '=') => Ok(Token::AssignAdd),
+        ('-', '=') => Ok(Token::AssignSub),
+        ('*', '=') => Ok(Token::AssignMul),
+        ('/', '=') => Ok(Token::AssignDiv),
+        ('%', '=') => Ok(Token::AssignMod),
+        ('&', '=') => Ok(Token::AssignAnd),
+        ('|', '=') => Ok(Token::AssignOr),
+        ('^', '=') => Ok(Token::AssignXor),
         _ => Err(LexError::UnexpectedChar(first)),
     };
 
@@ -160,12 +230,12 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
 
     while !input.is_empty() {
         match input[0] {
-            ';' | '{' | '}' | '(' | ')' | '~' | '%' | '*' | '/' | '^' => {
+            ';' | '{' | '}' | '(' | ')' | '~'  => {
                 let token = Token::try_from(input[0]).expect("Should never fail");
                 tokens.push_back(token);
                 let _ = input.pop_front();
             }
-            '-' | '+' | '=' | '!' | '>' | '<' | '|' | '&' => {
+            '%' | '^' | '/' | '*' | '-' | '+' | '=' | '!' | '>' | '<' | '|' | '&' => {
                 let token = lex_mcharoperator(&mut input)?;
                 tokens.push_back(token);
             }

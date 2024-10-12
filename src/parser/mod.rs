@@ -66,7 +66,7 @@ pub enum AstBinaryOp {
     BitwiseOr,
     BitwiseXor,
     ShiftLeft,
-    ShiftRight
+    ShiftRight,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -74,6 +74,10 @@ pub enum AstUnaryOp {
     Complement,
     Negate,
     LogicalNot,
+    PostfixDecrement,
+    PrefixDecrement,
+    PostfixIncrement,
+    PrefixIncrement,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +144,8 @@ fn parse_unary(tokens: &mut Tokens) -> Result<AstUnaryOp, ParseError> {
             Token::Hyphen => Ok(AstUnaryOp::Negate),
             Token::Tilde => Ok(AstUnaryOp::Complement),
             Token::LogicalNot => Ok(AstUnaryOp::LogicalNot),
+            Token::Increment => Ok(AstUnaryOp::PrefixIncrement),
+            Token::Decrement => Ok(AstUnaryOp::PrefixDecrement),
             _ => Err(ParseError::ExpectedButGot(Token::Hyphen, token)),
         }
     } else {
@@ -202,6 +208,18 @@ fn token_is_binaryop(token: &Token) -> bool {
             | Token::BitwiseXor
             | Token::ShiftLeft
             | Token::ShiftRight
+            | Token::AssignAdd
+            | Token::AssignSub
+            | Token::AssignMul
+            | Token::AssignDiv
+            | Token::AssignMod
+            | Token::AssignAnd
+            | Token::AssignOr
+            | Token::AssignXor
+            | Token::AssignShl
+            | Token::AssignShr
+            | Token::Increment
+            | Token::Decrement
     )
 }
 
@@ -226,6 +244,17 @@ fn get_prec(token: &Token) -> u64 {
         Token::LogicalAnd => 10,
         Token::LogicalOr => 5,
         Token::Assign => 1,
+        Token::AssignAdd
+        | Token::AssignSub
+        | Token::AssignMul
+        | Token::AssignDiv
+        | Token::AssignMod
+        | Token::AssignAnd
+        | Token::AssignOr
+        | Token::AssignXor
+        | Token::AssignShl
+        | Token::AssignShr => 1,
+        Token::Increment | Token::Decrement => 80,
         _ => 0,
     }
 }
@@ -239,9 +268,25 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
             break;
         }
 
-        if next_token == Token::Assign {
+        if next_token.is_incdec() {
             take_token(tokens);
-            let right = parse_exp(tokens, get_prec(&next_token))?;
+            let op = if matches!(next_token, Token::Increment) {
+                AstUnaryOp::PostfixIncrement
+            } else {
+                AstUnaryOp::PostfixDecrement
+            };
+            left = AstExp::Unary(op, Box::new(left));
+        } else if next_token.is_compound_assign() {
+            let comp_op = take_token(tokens).expect("Should never fail");
+            let op = comp_op.compound_to_single();
+            let right = parse_exp(tokens, prec)?;
+            tokens.push_front(op);
+            let op = parse_binop(tokens)?;
+            let operation = AstExp::Binary(op, Box::new(left.clone()), Box::new(right));
+            left = AstExp::Assignment(Box::new(left), Box::new(operation));
+        } else if next_token == Token::Assign {
+            take_token(tokens);
+            let right = parse_exp(tokens, prec)?;
             left = AstExp::Assignment(Box::new(left), Box::new(right));
         } else {
             let operator = parse_binop(tokens)?;
@@ -253,6 +298,14 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
     Ok(left)
 }
 
+fn prefix_to_postfix(op: AstUnaryOp) -> AstUnaryOp {
+    match op {
+        AstUnaryOp::PrefixIncrement => AstUnaryOp::PostfixIncrement,
+        AstUnaryOp::PrefixDecrement => AstUnaryOp::PostfixDecrement,
+        _ => op
+    }
+}
+
 fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
     if tokens.is_empty() {
         return Err(ParseError::ExpectedExpression);
@@ -260,7 +313,7 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
     let next_token = tokens.front().expect("Should never fail");
 
     match next_token {
-        Token::Tilde | Token::Hyphen | Token::LogicalNot => {
+        Token::Tilde | Token::Hyphen | Token::LogicalNot | Token::Increment | Token::Decrement => {
             let operator = parse_unary(tokens)?;
             let inner_exp = Box::new(parse_factor(tokens)?);
             Ok(AstExp::Unary(operator, inner_exp))
@@ -269,7 +322,13 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
             take_token(tokens);
             let inner_exp = parse_exp(tokens, 0)?;
             expect_token(tokens, Token::CloseParanth)?;
-            Ok(inner_exp)
+            if matches!(tokens.front(), Some(Token::Increment) | Some(Token::Decrement)) {
+                let operator = parse_unary(tokens)?;
+                let operator = prefix_to_postfix(operator);
+                Ok(AstExp::Unary(operator, Box::new(inner_exp)))
+            } else {
+                Ok(inner_exp)
+            }
         }
         Token::Constant(i) => {
             let inner = *i;
@@ -278,8 +337,15 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
         }
         Token::Identifier(id) => {
             let inner = id.clone();
+            let var = AstExp::Var(inner);
             take_token(tokens);
-            Ok(AstExp::Var(inner))
+            if matches!(tokens.front(), Some(Token::Increment) | Some(Token::Decrement)) {
+                let operator = parse_unary(tokens)?;
+                let operator = prefix_to_postfix(operator);
+                Ok(AstExp::Unary(operator, Box::new(var)))
+            } else {
+                Ok(var)
+            }
         }
         _ => Err(ParseError::BadExpression(next_token.clone())),
     }

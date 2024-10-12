@@ -89,6 +89,14 @@ fn resolve_exp(
             let right = resolve_exp(*right, vm)?;
             Ok(AstExp::Assignment(Box::new(left), Box::new(right)))
         }
+        AstExp::Unary(op @ (AstUnaryOp::PostfixIncrement | AstUnaryOp::PrefixIncrement | AstUnaryOp::PostfixDecrement | AstUnaryOp::PrefixDecrement), e) => {
+            let exp = resolve_exp(*e, vm)?;
+            if !exp.is_var() {
+                Err(SemAnalysisError::WrongLvalue(exp))
+            } else {
+                Ok(AstExp::Unary(op, Box::new(exp)))
+            }
+        }
         AstExp::Var(name) => {
             vm.get(&name)
                 .ok_or(SemAnalysisError::VariableNotDeclared(name.clone()))

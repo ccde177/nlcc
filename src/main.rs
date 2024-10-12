@@ -59,6 +59,7 @@ fn main() -> anyhow::Result<()> {
     let ast = parser::parse(tokens)?;
 
     if args.parse {
+        dbg!(ast);
         return Ok(());
     }
 
@@ -71,13 +72,14 @@ fn main() -> anyhow::Result<()> {
     let tacky = tacky::emit_tacky(validated_ast.clone());
 
     if args.tacky {
+        dbg!(tacky);
 	return Ok(());
     }
     
     let asm = codegen::codegen(tacky);
 
     if args.codegen {
-	println!("{asm:?}");
+        dbg!(asm);
         return Ok(());
     }
     

@@ -118,6 +118,7 @@ impl From<AstUnaryOp> for TUnaryOp {
             AstUnaryOp::Complement => TUnaryOp::Complement,
             AstUnaryOp::Negate => TUnaryOp::Negate,
             AstUnaryOp::LogicalNot => TUnaryOp::LogicalNot,
+            _ => unimplemented!()
         }
     }
 }
@@ -149,11 +150,40 @@ impl From<AstBinaryOp> for TBinaryOp {
 fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGenerator) -> TValue {
     match e {
         AstExp::Constant(u) => TValue::Constant(u),
+        AstExp::Unary(op @ (AstUnaryOp::PostfixIncrement | AstUnaryOp::PostfixDecrement), exp) => {
+            let one = TValue::Constant(1);
+            let op = if matches!(op, AstUnaryOp::PostfixIncrement) {
+                TBinaryOp::Add
+            } else {
+                TBinaryOp::Substract
+            };
+            let original = emit_instruction(instructions, *exp, ng);
+            let new_var = TValue::Var(ng.get_name());
+            let copy = TInstruction::Copy(original.clone(), new_var.clone());
+            let modify = TInstruction::Binary(op, new_var.clone(), one, original);
+            instructions.push(copy);
+            instructions.push(modify);
+            new_var
+        }
+        AstExp::Unary(op @ (AstUnaryOp::PrefixIncrement | AstUnaryOp::PrefixDecrement), exp) => {
+            let one = TValue::Constant(1);
+            let op = if matches!(op, AstUnaryOp::PrefixIncrement) {
+                TBinaryOp::Add
+            } else {
+                TBinaryOp::Substract
+            };
+            let src = emit_instruction(instructions, *exp, ng);
+            let dst = TValue::Var(ng.get_name());
+            let modify = TInstruction::Binary(op, src.clone(), one, dst.clone());
+            let copy = TInstruction::Copy(dst.clone(), src.clone());
+            instructions.push(modify);
+            instructions.push(copy);
+            src
+        }
         AstExp::Unary(op, exp) => {
             let tacky_op = TUnaryOp::from(op);
-            let src = emit_instruction(instructions, exp.as_ref().clone(), ng);
-            let dst_name = ng.get_name();
-            let dst = TValue::Var(dst_name);
+            let src = emit_instruction(instructions, *exp, ng);
+            let dst = TValue::Var(ng.get_name());
             let tacky_instruction = TInstruction::Unary(tacky_op, src, dst.clone());
             instructions.push(tacky_instruction);
             dst
@@ -194,7 +224,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             let jnz1 = TInstruction::JumpIfNotZero(v1.clone(), true_label.clone());
             instructions.push(jnz1);
 
-            let v2 = emit_instruction(instructions, dst.as_ref().clone(), ng);
+            let v2 = emit_instruction(instructions, *dst, ng);
             let jiz2 = TInstruction::JumpIfNotZero(v2.clone(), true_label.clone());
             instructions.push(jiz2);
 
@@ -207,8 +237,8 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             result
         }
         AstExp::Binary(op, exp1, exp2) => {
-            let v1 = emit_instruction(instructions, exp1.as_ref().clone(), ng);
-            let v2 = emit_instruction(instructions, exp2.as_ref().clone(), ng);
+            let v1 = emit_instruction(instructions, *exp1, ng);
+            let v2 = emit_instruction(instructions, *exp2, ng);
             let dst_name = ng.get_name();
             let dst = TValue::Var(dst_name);
             let tacky_op = TBinaryOp::from(op);
