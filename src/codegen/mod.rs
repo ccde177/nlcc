@@ -78,32 +78,24 @@ struct StackAllocator {
 impl Instruction {
     fn mem_operands(&self) -> bool {
         match self {
-            Self::Mov(src, dst) => src.is_mem() && dst.is_mem(),
-            Self::Cmp(src, dst) => src.is_mem() && dst.is_mem(),
-            Self::Binary(op, src, dst) => (*op != BinaryOp::Imul) && src.is_mem() && dst.is_mem(),
+            Self::Binary(BinaryOp::Imul, _, _) => false,
+            Self::Mov(src, dst) | Self::Cmp(src, dst) | Self::Binary(_, src, dst) => {
+                src.is_mem() && dst.is_mem()
+            }
             _ => false,
         }
     }
 
     fn is_cmp_sndimm(&self) -> bool {
-        match self {
-            Self::Cmp(_, dst) => dst.is_imm(),
-            _ => false,
-        }
+        matches!(self, Self::Cmp(_, Operand::Imm(_)))
     }
 
     fn is_mul_sndmem(&self) -> bool {
-        match self {
-            Instruction::Binary(op, _, operand) => *op == BinaryOp::Imul && operand.is_mem(),
-            _ => false,
-        }
+        matches!(self, Self::Binary(BinaryOp::Imul, _, Operand::Stack(_)))
     }
 
     fn is_idiv_constant(&self) -> bool {
-        match self {
-            Instruction::Idiv(c) => c.is_imm(),
-            _ => false,
-        }
+        matches!(self, Self::Idiv(Operand::Imm(_)))
     }
 }
 
@@ -114,10 +106,6 @@ impl Operand {
 
     pub fn is_reg(&self) -> bool {
         matches!(self, Self::Reg(_))
-    }
-
-    fn is_imm(&self) -> bool {
-        matches!(self, Self::Imm(_))
     }
 }
 
@@ -160,20 +148,18 @@ impl StackAllocator {
     fn allocate_if_pseudo(&mut self, operand: Operand) -> Operand {
         match operand {
             Operand::Pseudo(name) => {
-                let offset = self.allocate(&name);
+                let offset = self.allocate(name);
                 Operand::Stack(offset)
             }
             _ => operand,
         }
     }
 
-    fn allocate(&mut self, name: &Identifier) -> u64 {
-        if self.map.contains_key(name) {
-            return *self.map.get(name).unwrap();
-        }
-        self.offset += 4;
-        self.map.insert(name.clone(), self.offset);
-        self.offset
+    fn allocate(&mut self, name: Identifier) -> u64 {
+        *self.map.entry(name).or_insert_with(|| {
+            self.offset += 4;
+            self.offset
+        })
     }
 
     fn get_prologue(&self) -> Instruction {
@@ -202,7 +188,6 @@ fn tbinary_to_asm(instructions: &mut AsmInstructions, tinstr: TInstruction) {
         let src1 = Operand::from(val1);
         let src2 = Operand::from(val2);
         let dst = Operand::from(val3);
-
         let is_div = op.is_div();
         let is_rem = op.is_rem();
 
@@ -212,6 +197,7 @@ fn tbinary_to_asm(instructions: &mut AsmInstructions, tinstr: TInstruction) {
             let mov = Instruction::Mov(src1, dst.clone());
             let mov2 = Instruction::Mov(src2, cx.clone());
             let operation = Instruction::Binary(op, cx, dst);
+
             instructions.push(mov);
             instructions.push(mov2);
             instructions.push(operation);
@@ -280,6 +266,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let dst = Operand::Reg(Register::Ax);
                 let mov = Instruction::Mov(src, dst);
                 let ret = Instruction::Ret;
+                
                 instructions.push(mov);
                 instructions.push(ret);
             }
@@ -289,6 +276,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let mov = Instruction::Mov(Operand::Imm(0), dst.clone());
                 let setcc = Instruction::SetCC(Condition::E, dst);
+                
                 instructions.push(cmp);
                 instructions.push(mov);
                 instructions.push(setcc);
@@ -299,6 +287,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let op = UnaryOp::from(op);
                 let mov = Instruction::Mov(src, dst.clone());
                 let unary = Instruction::Unary(op, dst);
+                
                 instructions.push(mov);
                 instructions.push(unary);
             }
@@ -313,6 +302,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let src = Operand::from(val);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let jmp = Instruction::JmpCC(Condition::E, target);
+                
                 instructions.push(cmp);
                 instructions.push(jmp);
             }
@@ -320,6 +310,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let src = Operand::from(val);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let jmp = Instruction::JmpCC(Condition::NE, target);
+                
                 instructions.push(cmp);
                 instructions.push(jmp);
             }
@@ -327,6 +318,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let src = Operand::from(src);
                 let dst = Operand::from(dst);
                 let mov = Instruction::Mov(src, dst);
+                
                 instructions.push(mov);
             }
             TInstruction::Label(id) => {
@@ -344,18 +336,18 @@ fn allocate_stack(instructions: &mut AsmInstructions) {
     let mut sa = StackAllocator::new();
     for inst in instructions.iter_mut() {
         match inst {
-            Instruction::SetCC(cond, operand) => {
-                let operand = sa.allocate_if_pseudo(operand.clone());
-                *inst = Instruction::SetCC(*cond, operand);
+            Instruction::SetCC(_, operand) => {
+                let allocated = sa.allocate_if_pseudo(operand.clone());
+                *operand = allocated;
             }
             Instruction::Cmp(src, dst) => {
                 let src = sa.allocate_if_pseudo(src.clone());
                 let dst = sa.allocate_if_pseudo(dst.clone());
                 *inst = Instruction::Cmp(src, dst);
             }
-            Instruction::Unary(op, operand) => {
-                let operand = sa.allocate_if_pseudo(operand.clone());
-                *inst = Instruction::Unary(*op, operand);
+            Instruction::Unary(_, operand) => {
+                let allocated = sa.allocate_if_pseudo(operand.clone());
+                *operand = allocated;
             }
             Instruction::Mov(src, dst) => {
                 let src = sa.allocate_if_pseudo(src.clone());
@@ -368,12 +360,13 @@ fn allocate_stack(instructions: &mut AsmInstructions) {
                 *inst = Instruction::Binary(*op, operand1, operand2);
             }
             Instruction::Idiv(operand) => {
-                let operand = sa.allocate_if_pseudo(operand.clone());
-                *inst = Instruction::Idiv(operand);
+                let allocated = sa.allocate_if_pseudo(operand.clone());
+                *operand = allocated
             }
             _ => (),
         }
     }
+    
     let prologue = sa.get_prologue();
     instructions.insert(0, prologue);
 }
@@ -491,16 +484,15 @@ fn gen_body(body: TInstructions) -> AsmInstructions {
 }
 
 fn gen_fundef(f: TFunction) -> Function {
-    match f {
-        TFunction::FunDef(name, body) => Function {
-            name,
-            body: gen_body(body),
-        },
-    }
+    let TFunction::FunDef(name, body) = f;
+    let body = gen_body(body);
+
+    Function { name, body }
 }
 
 pub fn codegen(ast: TAst) -> AsmAst {
-    match ast {
-        TAst::Program(f) => AsmAst::Program(gen_fundef(f)),
-    }
+    let TAst::Program(f) = ast;
+    let fun_def = gen_fundef(f);
+    
+    AsmAst::Program(fun_def)
 }
