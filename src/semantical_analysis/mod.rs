@@ -1,6 +1,6 @@
 use crate::parser::*;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 pub type Identifier = String;
@@ -11,6 +11,8 @@ pub enum SemAnalysisError {
     VariableRedeclaration(Identifier),
     VariableNotDeclared(Identifier),
     WrongLvalue(AstExp),
+    LabelRedeclaration(Identifier),
+    UnknownLabel(Identifier),
 }
 
 impl fmt::Display for SemAnalysisError {
@@ -19,6 +21,8 @@ impl fmt::Display for SemAnalysisError {
             Self::VariableRedeclaration(id) => write!(f, "Redeclaration of a variable {id}"),
             Self::VariableNotDeclared(id) => write!(f, "Unknown variable: {id}"),
             Self::WrongLvalue(exp) => write!(f, "Wrong lvalue: {exp:?}"),
+            Self::LabelRedeclaration(name) => write!(f, "Label {name} redeclaration"),
+            Self::UnknownLabel(name) => write!(f, "Unknown label {name}"),
         }
     }
 }
@@ -67,32 +71,46 @@ fn resolve_declaration(
 
 fn resolve_statement(st: AstStatement, vm: &mut VariableMap) -> Result<AstStatement> {
     match st {
-        AstStatement::If{condition,then, els} => {
+        AstStatement::If {
+            condition,
+            then,
+            els,
+        } => {
             let condition = resolve_exp(condition, vm)?;
             let then = Box::new(resolve_statement(*then, vm)?);
-            let els = els.map_or(Ok(None), |bs| resolve_statement(*bs, vm).map(Box::new).map(Some))?;
-            Ok(AstStatement::If{
+            let els = els.map_or(Ok(None), |bs| {
+                resolve_statement(*bs, vm).map(Box::new).map(Some)
+            })?;
+            Ok(AstStatement::If {
                 condition,
                 then,
-                els
+                els,
             })
-        },
+        }
+        AstStatement::LabeledStatement(label, statement) => {
+            let statement = resolve_statement(*statement, vm).map(Box::new)?;
+            Ok(AstStatement::LabeledStatement(label, statement))
+        }
         AstStatement::Return(e) => Ok(AstStatement::Return(resolve_exp(e, vm)?)),
         AstStatement::Exp(e) => Ok(AstStatement::Exp(resolve_exp(e, vm)?)),
-        AstStatement::Null => Ok(AstStatement::Null),
+        statement @ _ => Ok(statement),
     }
 }
 
 fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
     match exp {
-        AstExp::Conditional { condition, then, els } => {
+        AstExp::Conditional {
+            condition,
+            then,
+            els,
+        } => {
             let condition = resolve_exp(*condition, vm).map(Box::new)?;
             let then = resolve_exp(*then, vm).map(Box::new)?;
             let els = resolve_exp(*els, vm).map(Box::new)?;
-            Ok(AstExp::Conditional{
+            Ok(AstExp::Conditional {
                 condition,
                 then,
-                els
+                els,
             })
         }
         AstExp::Assignment(left, right) => {
@@ -153,12 +171,67 @@ fn variable_resolution(blocks: AstBlockItems) -> Result<AstBlockItems> {
     Ok(result)
 }
 
-pub fn validate(ast: Ast) -> Result<Ast> {
-    match ast {
-        Ast::FunDef(function) => {
-            let name = function.name;
-            let body = variable_resolution(function.body)?;
-            Ok(Ast::FunDef(AstFunction { name, body }))
+type LabelSet = HashSet<Identifier>;
+
+fn intersect_ls(ls: &LabelSet, other: &LabelSet) -> Result<LabelSet> {
+    if let Some(wrong) = ls.intersection(other).nth(0) {
+        return Err(SemAnalysisError::LabelRedeclaration(wrong.clone()));
+    }
+    let union = ls.union(other).cloned().collect();
+    Ok(union)
+}
+
+fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
+    let mut ls = LabelSet::new();
+    match statement {
+        AstStatement::LabeledStatement(name, st) => {
+            if ls.contains(name) {
+                return Err(SemAnalysisError::LabelRedeclaration(name.clone()));
+            }
+            ls.insert(name.clone());
+            let ls_inner = collect_labels_statement(st)?;
+            ls = intersect_ls(&ls, &ls_inner)?;
+        }
+        AstStatement::If { then, els, .. } => {
+            let then_collect = collect_labels_statement(&then)?;
+            ls = intersect_ls(&ls, &then_collect)?;
+            if let Some(st) = els {
+                let els_collect = collect_labels_statement(&st)?;
+                ls = intersect_ls(&ls, &els_collect)?;
+            }
+        }
+        _ => (),
+    }
+    Ok(ls)
+}
+fn ensure_goto_correctness(blocks: &AstBlockItems) -> Result<()> {
+    let mut ls = LabelSet::new();
+    for block in blocks {
+        match block {
+            AstBlockItem::S(s) => {
+                let collect = collect_labels_statement(&s)?;
+                ls = intersect_ls(&ls, &collect)?;
+            }
+            _ => (),
         }
     }
+    for block in blocks {
+        match block {
+            AstBlockItem::S(AstStatement::Goto(label)) => {
+                if !ls.contains(label) {
+                    return Err(SemAnalysisError::UnknownLabel(label.clone()));
+                }
+            }
+            _ => (),
+        }
+    }
+    Ok(())
+}
+
+pub fn validate(ast: Ast) -> Result<Ast> {
+    let Ast::FunDef(function) = ast;
+    let name = function.name;
+    let body = variable_resolution(function.body)?;
+    ensure_goto_correctness(&body)?;
+    Ok(Ast::FunDef(AstFunction { name, body }))
 }

@@ -55,7 +55,8 @@ pub enum Token {
     If,
     Else,
     QuestionMark,
-    Colon
+    Goto,
+    Colon,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -149,6 +150,7 @@ impl From<String> for Token {
             "void" => Self::Void,
             "if" => Self::If,
             "else" => Self::Else,
+            "goto" => Self::Goto,
             _ => Self::Identifier(s),
         }
     }
@@ -247,7 +249,7 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
                 let token = lex_mcharoperator(&mut input)?;
                 tokens.push_back(token);
             }
-            'a'..='z' | 'A'..='Z' => {
+            '_' | 'a'..='z' | 'A'..='Z' => {
                 let token = lex_identifier(&mut input)?;
                 tokens.push_back(token);
             }

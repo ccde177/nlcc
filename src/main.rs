@@ -28,6 +28,9 @@ struct Args {
     #[arg(long)]
     validate: bool,
 
+    #[arg(short = 'S')]
+    no_assemble: bool,
+
     input: PathBuf,
 }
 
@@ -66,6 +69,7 @@ fn main() -> anyhow::Result<()> {
     let validated_ast = semantical_analysis::validate(ast)?;
 
     if args.validate {
+        dbg!(validated_ast);
         return Ok(());
     }
 
@@ -86,6 +90,10 @@ fn main() -> anyhow::Result<()> {
     let mut asm_file = args.input.clone();
     asm_file.set_extension("s");
     fs::write(&asm_file, asm.to_string())?;
+
+    if args.no_assemble {
+        return Ok(());
+    }
 
     let mut out_file = args.input.clone();
     out_file.set_extension("");

@@ -258,7 +258,11 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             var
         }
         AstExp::Var(name) => TValue::Var(name.clone()),
-        AstExp::Conditional{condition, then, els} => {
+        AstExp::Conditional {
+            condition,
+            then,
+            els,
+        } => {
             let c = emit_instruction(instructions, *condition, ng);
             let e2 = ng.get_label();
             let jz = TInstruction::JumpIfZero(c, e2.clone());
@@ -288,7 +292,11 @@ fn emit_statement(
     ng: &mut NameGenerator,
 ) {
     match statement {
-        AstStatement::If{condition, then, els} => {
+        AstStatement::If {
+            condition,
+            then,
+            els,
+        } => {
             let c = emit_instruction(instructions, condition, ng);
             let end_or_else = ng.get_label();
             let jz = TInstruction::JumpIfZero(c, end_or_else.clone());
@@ -297,7 +305,7 @@ fn emit_statement(
             let end_or_else = TInstruction::Label(end_or_else);
             if els.is_some() {
                 let els_label = end_or_else;
-                let end = ng.get_name();
+                let end = ng.get_label();
                 let jump_end = TInstruction::Jump(end.clone());
                 instructions.push(jump_end);
                 instructions.push(els_label);
@@ -307,6 +315,15 @@ fn emit_statement(
             } else {
                 instructions.push(end_or_else);
             }
+        }
+        AstStatement::Goto(label) => {
+            let jump = TInstruction::Jump(label);
+            instructions.push(jump);
+        }
+        AstStatement::LabeledStatement(name, statement) => {
+            let label = TInstruction::Label(name);
+            instructions.push(label);
+            emit_statement(*statement, instructions, ng);
         }
         AstStatement::Return(e) => {
             let value = emit_instruction(instructions, e, ng);

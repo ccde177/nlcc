@@ -1,10 +1,11 @@
 use crate::lexer::{Token, Tokens};
+
 use std::fmt;
 
 #[cfg(test)]
 mod parser_tests;
 
-type Identifier = String;
+pub type Identifier = String;
 
 #[derive(Debug, Clone)]
 pub enum Ast {
@@ -38,6 +39,8 @@ pub enum AstStatement {
         then: Box<AstStatement>,
         els: Option<Box<AstStatement>>,
     },
+    LabeledStatement(Identifier, Box<AstStatement>),
+    Goto(Identifier),
     Return(AstExp),
     Exp(AstExp),
     Null,
@@ -293,7 +296,7 @@ fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp, ParseError> {
         if next_token == Token::QuestionMark {
             let middle = parse_conditional_middle(tokens)?;
             let right = parse_exp(tokens, prec)?;
-            left = AstExp::Conditional{
+            left = AstExp::Conditional {
                 condition: Box::new(left),
                 then: Box::new(middle),
                 els: Box::new(right),
@@ -387,6 +390,10 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
     }
 }
 
+fn peek_2nd(tokens: &Tokens) -> Option<Token> {
+    tokens.iter().nth(1).cloned()
+}
+
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
     let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
@@ -407,6 +414,24 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {
                 then: Box::new(then),
                 els,
             })
+        }
+        Token::Identifier(id) => {
+            if let Some(Token::Colon) = peek_2nd(tokens) {
+                take_token(tokens);
+                expect_token(tokens, Token::Colon)?;
+                let statement = parse_statement(tokens).map(Box::new)?;
+                Ok(AstStatement::LabeledStatement(id, statement))
+            } else {
+                let exp = parse_exp(tokens, 0)?;
+                expect_token(tokens, Token::Semicolon)?;
+                Ok(AstStatement::Exp(exp))
+            }
+        }
+        Token::Goto => {
+            take_token(tokens);
+            let label = expect_identifier(tokens)?;
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstStatement::Goto(label))
         }
         Token::Return => {
             take_token(tokens);
