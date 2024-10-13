@@ -114,7 +114,7 @@ fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
             })
         }
         AstExp::Assignment(left, right) => {
-            if !left.as_ref().is_var() {
+            if !left.is_var() {
                 return Err(SemAnalysisError::WrongLvalue(*left));
             }
             let left = resolve_exp(*left, vm).map(Box::new)?;
@@ -140,13 +140,13 @@ fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
             .ok_or(SemAnalysisError::VariableNotDeclared(name.clone()))
             .map(|n| AstExp::Var(n.to_string())),
         AstExp::Unary(op, exp) => {
-            let exp = resolve_exp(*exp, vm)?;
-            Ok(AstExp::Unary(op, Box::new(exp)))
+            let exp = resolve_exp(*exp, vm).map(Box::new)?;
+            Ok(AstExp::Unary(op, exp))
         }
         AstExp::Binary(op, src, dst) => {
-            let src = resolve_exp(*src, vm)?;
-            let dst = resolve_exp(*dst, vm)?;
-            Ok(AstExp::Binary(op, Box::new(src), Box::new(dst)))
+            let src = resolve_exp(*src, vm).map(Box::new)?;
+            let dst = resolve_exp(*dst, vm).map(Box::new)?;
+            Ok(AstExp::Binary(op, src, dst))
         }
         AstExp::Constant(_) => Ok(exp),
     }
@@ -204,6 +204,7 @@ fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
     }
     Ok(ls)
 }
+
 fn ensure_goto_correctness(blocks: &AstBlockItems) -> Result<()> {
     let mut ls = LabelSet::new();
     for block in blocks {
