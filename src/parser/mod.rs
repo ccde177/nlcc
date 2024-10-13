@@ -391,7 +391,7 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp, ParseError> {
 }
 
 fn peek_2nd(tokens: &Tokens) -> Option<Token> {
-    tokens.iter().nth(1).cloned()
+    tokens.get(1).cloned()
 }
 
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement, ParseError> {

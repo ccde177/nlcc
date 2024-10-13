@@ -93,7 +93,7 @@ fn resolve_statement(st: AstStatement, vm: &mut VariableMap) -> Result<AstStatem
         }
         AstStatement::Return(e) => Ok(AstStatement::Return(resolve_exp(e, vm)?)),
         AstStatement::Exp(e) => Ok(AstStatement::Exp(resolve_exp(e, vm)?)),
-        statement @ _ => Ok(statement),
+        statement => Ok(statement),
     }
 }
 
@@ -174,7 +174,7 @@ fn variable_resolution(blocks: AstBlockItems) -> Result<AstBlockItems> {
 type LabelSet = HashSet<Identifier>;
 
 fn intersect_ls(ls: &LabelSet, other: &LabelSet) -> Result<LabelSet> {
-    if let Some(wrong) = ls.intersection(other).nth(0) {
+    if let Some(wrong) = ls.intersection(other).next() {
         return Err(SemAnalysisError::LabelRedeclaration(wrong.clone()));
     }
     let union = ls.union(other).cloned().collect();
@@ -193,10 +193,10 @@ fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
             ls = intersect_ls(&ls, &ls_inner)?;
         }
         AstStatement::If { then, els, .. } => {
-            let then_collect = collect_labels_statement(&then)?;
+            let then_collect = collect_labels_statement(then)?;
             ls = intersect_ls(&ls, &then_collect)?;
             if let Some(st) = els {
-                let els_collect = collect_labels_statement(&st)?;
+                let els_collect = collect_labels_statement(st)?;
                 ls = intersect_ls(&ls, &els_collect)?;
             }
         }
@@ -207,22 +207,16 @@ fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
 fn ensure_goto_correctness(blocks: &AstBlockItems) -> Result<()> {
     let mut ls = LabelSet::new();
     for block in blocks {
-        match block {
-            AstBlockItem::S(s) => {
-                let collect = collect_labels_statement(&s)?;
-                ls = intersect_ls(&ls, &collect)?;
-            }
-            _ => (),
+        if let AstBlockItem::S(s) = block {            
+            let collect = collect_labels_statement(s)?;
+            ls = intersect_ls(&ls, &collect)?;
         }
     }
     for block in blocks {
-        match block {
-            AstBlockItem::S(AstStatement::Goto(label)) => {
-                if !ls.contains(label) {
-                    return Err(SemAnalysisError::UnknownLabel(label.clone()));
-                }
+        if let AstBlockItem::S(AstStatement::Goto(label)) = block {
+            if !ls.contains(label){
+                return Err(SemAnalysisError::UnknownLabel(label.clone()));
             }
-            _ => (),
         }
     }
     Ok(())
