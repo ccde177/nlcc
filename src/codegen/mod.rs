@@ -266,7 +266,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let dst = Operand::Reg(Register::Ax);
                 let mov = Instruction::Mov(src, dst);
                 let ret = Instruction::Ret;
-                
+
                 instructions.push(mov);
                 instructions.push(ret);
             }
@@ -276,7 +276,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let mov = Instruction::Mov(Operand::Imm(0), dst.clone());
                 let setcc = Instruction::SetCC(Condition::E, dst);
-                
+
                 instructions.push(cmp);
                 instructions.push(mov);
                 instructions.push(setcc);
@@ -287,7 +287,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let op = UnaryOp::from(op);
                 let mov = Instruction::Mov(src, dst.clone());
                 let unary = Instruction::Unary(op, dst);
-                
+
                 instructions.push(mov);
                 instructions.push(unary);
             }
@@ -302,7 +302,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let src = Operand::from(val);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let jmp = Instruction::JmpCC(Condition::E, target);
-                
+
                 instructions.push(cmp);
                 instructions.push(jmp);
             }
@@ -310,7 +310,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let src = Operand::from(val);
                 let cmp = Instruction::Cmp(Operand::Imm(0), src);
                 let jmp = Instruction::JmpCC(Condition::NE, target);
-                
+
                 instructions.push(cmp);
                 instructions.push(jmp);
             }
@@ -318,7 +318,7 @@ fn tacky_to_asm(body: TInstructions) -> AsmInstructions {
                 let src = Operand::from(src);
                 let dst = Operand::from(dst);
                 let mov = Instruction::Mov(src, dst);
-                
+
                 instructions.push(mov);
             }
             TInstruction::Label(id) => {
@@ -366,7 +366,7 @@ fn allocate_stack(instructions: &mut AsmInstructions) {
             _ => (),
         }
     }
-    
+
     let prologue = sa.get_prologue();
     instructions.insert(0, prologue);
 }
@@ -493,6 +493,6 @@ fn gen_fundef(f: TFunction) -> Function {
 pub fn codegen(ast: TAst) -> AsmAst {
     let TAst::Program(f) = ast;
     let fun_def = gen_fundef(f);
-    
+
     AsmAst::Program(fun_def)
 }

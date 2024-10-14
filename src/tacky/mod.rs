@@ -316,6 +316,11 @@ fn emit_statement(
                 instructions.push(end_or_else);
             }
         }
+        AstStatement::Compound(block) => {
+            let AstBlock { items } = block;
+            let mut block_items = emit_block_items(items, ng);
+            instructions.append(&mut block_items);
+        }
         AstStatement::Goto(label) => {
             let jump = TInstruction::Jump(label);
             instructions.push(jump);
@@ -345,26 +350,30 @@ fn emit_declaration(d: AstDeclaration, instructions: &mut TInstructions, ng: &mu
     }
 }
 
-fn emit_block_items(blockitems: AstBlockItems) -> TInstructions {
+fn emit_block_items(blockitems: AstBlockItems, ng: &mut NameGenerator) -> TInstructions {
     let mut instructions = TInstructions::new();
-    let mut ng = NameGenerator::new();
     for block in blockitems.into_iter() {
         match block {
-            AstBlockItem::S(s) => emit_statement(s, &mut instructions, &mut ng),
-            AstBlockItem::D(d) => emit_declaration(d, &mut instructions, &mut ng),
+            AstBlockItem::S(s) => emit_statement(s, &mut instructions, ng),
+            AstBlockItem::D(d) => emit_declaration(d, &mut instructions, ng),
         }
     }
     instructions
 }
 
 fn emit_function(f: AstFunction) -> TFunction {
-    let mut body = emit_block_items(f.body);
+    let AstBlock { items } = f.body;
+    let mut ng = NameGenerator::new();
+    let mut body = emit_block_items(items, &mut ng);
+
     body.push(TInstruction::Return(TValue::Constant(0)));
+
     TFunction::FunDef(f.name, body)
 }
 
 pub fn emit_tacky(input: Ast) -> TAst {
-    match input {
-        Ast::FunDef(f) => TAst::Program(emit_function(f)),
-    }
+    let Ast::FunDef(f) = input;
+    let tfunction = emit_function(f);
+
+    TAst::Program(tfunction)
 }
