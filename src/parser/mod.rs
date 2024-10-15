@@ -40,17 +40,42 @@ pub struct AstDeclaration {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AstStatement {
+    While {
+        condition: AstExp,
+        body: Box<AstStatement>,
+        label: Identifier,
+    },
+    DoWhile {
+        condition: AstExp,
+        body: Box<AstStatement>,
+        label: Identifier,
+    },
+    For {
+        init: AstForInit,
+        condition: Option<AstExp>,
+        post: Option<AstExp>,
+        body: Box<AstStatement>,
+        label: Identifier,
+    },
     If {
         condition: AstExp,
         then: Box<AstStatement>,
         els: Option<Box<AstStatement>>,
     },
     LabeledStatement(Identifier, Box<AstStatement>),
+    Continue(Identifier),
     Compound(AstBlock),
+    Break(Identifier),
     Goto(Identifier),
     Return(AstExp),
     Exp(AstExp),
     Null,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AstForInit {
+    InitDecl(AstDeclaration),
+    InitExp(Option<AstExp>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -401,9 +426,87 @@ fn peek_2nd(tokens: &Tokens) -> Option<Token> {
     tokens.get(1).cloned()
 }
 
+fn parse_optional_exp(tokens: &mut Tokens, delim: Token) -> Result<Option<AstExp>> {
+    let next_token = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
+    if next_token == delim {
+        Ok(None)
+    } else {
+        parse_exp(tokens, 0).map(Some)
+    }
+}
+
+fn parse_forinit(tokens: &mut Tokens) -> Result<AstForInit> {
+    let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
+    match next {
+        Token::Int => {
+            let declaration = parse_declaration(tokens)?;
+            Ok(AstForInit::InitDecl(declaration))
+        }
+        _ => {
+            let exp = parse_optional_exp(tokens, Token::Semicolon)?;
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstForInit::InitExp(exp))
+        }
+    }
+}
+
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
     let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
+        Token::Break => {
+            take_token(tokens);
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstStatement::Break("".into()))
+        }
+        Token::Continue => {
+            take_token(tokens);
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstStatement::Continue("".into()))
+        }
+        Token::While => {
+            take_token(tokens);
+            expect_token(tokens, Token::OpenParanth)?;
+            let condition = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::CloseParanth)?;
+            let body = parse_statement(tokens).map(Box::new)?;
+            Ok(AstStatement::While{
+                label: "".into(),
+                condition,
+                body
+            })
+        }
+        Token::Do => {
+            take_token(tokens);
+            let body = parse_statement(tokens).map(Box::new)?;
+            expect_token(tokens, Token::While)?;
+            expect_token(tokens, Token::OpenParanth)?;
+            let condition = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::CloseParanth)?;
+            expect_token(tokens, Token::Semicolon)?;
+            Ok(AstStatement::DoWhile {
+                label: "".into(),
+                body,
+                condition
+            })
+        }
+        Token::For => {
+            take_token(tokens);
+            expect_token(tokens, Token::OpenParanth)?;
+            let init = parse_forinit(tokens)?;
+            let condition = parse_optional_exp(tokens, Token::Semicolon)?;
+            expect_token(tokens, Token::Semicolon)?;
+            let post = parse_optional_exp(tokens, Token::CloseParanth)?;
+            expect_token(tokens, Token::CloseParanth)?;
+
+            let body = parse_statement(tokens).map(Box::new)?;
+            Ok(AstStatement::For {
+                label: "".into(),
+                init,
+                condition,
+                post,
+                body
+            })
+        }
         Token::If => {
             take_token(tokens);
             expect_token(tokens, Token::OpenParanth)?;

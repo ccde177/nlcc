@@ -1,9 +1,11 @@
 mod goto;
 mod variable_resolution;
+mod loop_labeling;
 
 use crate::parser::*;
 use goto::ensure_goto_correctness;
 use variable_resolution::variable_resolution;
+use loop_labeling::label_loops;
 
 use std::fmt;
 
@@ -16,6 +18,8 @@ pub enum SemAnalysisError {
     WrongLvalue(AstExp),
     LabelRedeclaration(Identifier),
     UnknownLabel(Identifier),
+    BreakOutsideOfLoop,
+    ContinueOutsideOfLoop
 }
 
 impl fmt::Display for SemAnalysisError {
@@ -26,6 +30,8 @@ impl fmt::Display for SemAnalysisError {
             Self::WrongLvalue(exp) => write!(f, "Wrong lvalue: {exp:?}"),
             Self::LabelRedeclaration(name) => write!(f, "Label {name} redeclaration"),
             Self::UnknownLabel(name) => write!(f, "Unknown label {name}"),
+            Self::BreakOutsideOfLoop => write!(f, "break statement outside of loop"),
+            Self::ContinueOutsideOfLoop => write!(f, "continue statement outside of loop"),
         }
     }
 }
@@ -34,11 +40,9 @@ impl std::error::Error for SemAnalysisError {}
 
 pub fn validate(ast: Ast) -> Result<Ast> {
     let Ast::FunDef(function) = ast;
-
+    let function = variable_resolution(function).and_then(label_loops)?;
+    
     ensure_goto_correctness(&function)?;
 
-    let name = function.name;
-    let body = variable_resolution(function.body)?;
-
-    Ok(Ast::FunDef(AstFunction { name, body }))
+    Ok(Ast::FunDef(function))
 }

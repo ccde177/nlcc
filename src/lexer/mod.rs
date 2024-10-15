@@ -57,6 +57,11 @@ pub enum Token {
     QuestionMark,
     Goto,
     Colon,
+    Do,
+    While,
+    For,
+    Break,
+    Continue
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -142,16 +147,21 @@ impl TryFrom<char> for Token {
     }
 }
 
-impl From<String> for Token {
-    fn from(s: String) -> Self {
-        match s.as_str() {
+impl From<&str> for Token {
+    fn from(s: &str) -> Self {
+        match s {
             "int" => Self::Int,
             "return" => Self::Return,
             "void" => Self::Void,
             "if" => Self::If,
             "else" => Self::Else,
             "goto" => Self::Goto,
-            _ => Self::Identifier(s),
+            "do" => Self::Do,
+            "while" => Self::While,
+            "for" => Self::For,
+            "break" => Self::Break,
+            "continue" => Self::Continue,
+            _ => Self::Identifier(s.to_string()),
         }
     }
 }
@@ -231,7 +241,7 @@ fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
         let c = input.pop_front().expect("Should never fail");
         buf.push(c);
     }
-    Ok(Token::from(buf))
+    Ok(Token::from(buf.as_ref()))
 }
 
 pub fn lex(input: String) -> Result<Tokens, LexError> {

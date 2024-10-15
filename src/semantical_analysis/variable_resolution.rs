@@ -75,19 +75,87 @@ fn resolve_declaration(
     })
 }
 
+fn resolve_forinit(
+    init: AstForInit,
+    vm: &mut VariableMap,
+    ng: &mut NameGenerator,
+) -> Result<AstForInit> {
+    match init {
+        AstForInit::InitDecl(dec) => {
+            let dec = resolve_declaration(dec, vm, ng)?;
+            Ok(AstForInit::InitDecl(dec))
+        }
+        AstForInit::InitExp(exp) => {
+            let exp = resolve_optional_exp(exp, vm)?;
+            Ok(AstForInit::InitExp(exp))
+        }
+    }
+}
+
+fn resolve_optional_exp(exp: Option<AstExp>, vm: &mut VariableMap) -> Result<Option<AstExp>> {
+    exp.map_or(Ok(None), |exp| resolve_exp(exp, vm).map(Some))
+}
+
 fn resolve_statement(
     st: AstStatement,
     vm: &mut VariableMap,
     ng: &mut NameGenerator,
 ) -> Result<AstStatement> {
     match st {
+        AstStatement::While {
+            condition,
+            body,
+            label,
+        } => {
+            let condition = resolve_exp(condition, vm)?;
+            let body = resolve_statement(*body, vm, ng).map(Box::new)?;
+            Ok(AstStatement::While {
+                condition,
+                body,
+                label,
+            })
+        }
+        AstStatement::DoWhile {
+            condition,
+            body,
+            label,
+        } => {
+            let condition = resolve_exp(condition, vm)?;
+            let body = resolve_statement(*body, vm, ng).map(Box::new)?;
+            Ok(AstStatement::DoWhile {
+                condition,
+                body,
+                label,
+            })
+        }
+        AstStatement::For {
+            init,
+            condition,
+            post,
+            body,
+            label,
+        } => {
+            let mut new_vm = VariableMap::new_scope_copy(vm);
+            let init = resolve_forinit(init, &mut new_vm, ng)?;
+            let condition = resolve_optional_exp(condition, &mut new_vm)?;
+            let post = resolve_optional_exp(post, &mut new_vm)?;
+            let body = resolve_statement(*body, &mut new_vm, ng).map(Box::new)?;
+
+            Ok(AstStatement::For {
+                init,
+                condition,
+                post,
+                body,
+                label,
+            })
+        }
         AstStatement::If {
             condition,
             then,
             els,
         } => {
             let condition = resolve_exp(condition, vm)?;
-            let then = Box::new(resolve_statement(*then, vm, ng)?);
+            let then = resolve_statement(*then, vm, ng).map(Box::new)?;
             let els = els.map_or(Ok(None), |bs| {
                 resolve_statement(*bs, vm, ng).map(Box::new).map(Some)
             })?;
@@ -108,7 +176,7 @@ fn resolve_statement(
         }
         AstStatement::Return(e) => Ok(AstStatement::Return(resolve_exp(e, vm)?)),
         AstStatement::Exp(e) => Ok(AstStatement::Exp(resolve_exp(e, vm)?)),
-        statement => Ok(statement),
+        _ => Ok(st),
     }
 }
 
@@ -185,8 +253,14 @@ fn resolve_block(block: AstBlock, mut vm: VariableMap, ng: &mut NameGenerator) -
     Ok(AstBlock { items: result })
 }
 
-pub fn variable_resolution(block: AstBlock) -> Result<AstBlock> {
+pub fn variable_resolution(f: AstFunction) -> Result<AstFunction> {
+    let AstFunction {body, name} = f;
     let scope = VariableMap::new();
     let mut ng = NameGenerator::new();
-    resolve_block(block, scope, &mut ng)
+    let body = resolve_block(body, scope, &mut ng)?;
+    
+    Ok(AstFunction {
+        name,
+        body
+    })
 }

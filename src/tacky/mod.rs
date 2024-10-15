@@ -147,7 +147,7 @@ impl From<AstBinaryOp> for TBinaryOp {
     }
 }
 
-fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGenerator) -> TValue {
+fn emit_expression(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGenerator) -> TValue {
     match e {
         AstExp::Constant(u) => TValue::Constant(u),
         AstExp::Unary(op @ (AstUnaryOp::PostfixIncrement | AstUnaryOp::PostfixDecrement), exp) => {
@@ -157,7 +157,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             } else {
                 TBinaryOp::Substract
             };
-            let original = emit_instruction(instructions, *exp, ng);
+            let original = emit_expression(instructions, *exp, ng);
             let new_var = TValue::Var(ng.get_name());
             let copy = TInstruction::Copy(original.clone(), new_var.clone());
             let modify = TInstruction::Binary(op, new_var.clone(), one, original);
@@ -172,7 +172,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             } else {
                 TBinaryOp::Substract
             };
-            let src = emit_instruction(instructions, *exp, ng);
+            let src = emit_expression(instructions, *exp, ng);
             let dst = TValue::Var(ng.get_name());
             let modify = TInstruction::Binary(op, src.clone(), one, dst.clone());
             let copy = TInstruction::Copy(dst.clone(), src.clone());
@@ -182,7 +182,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
         }
         AstExp::Unary(op, exp) => {
             let tacky_op = TUnaryOp::from(op);
-            let src = emit_instruction(instructions, *exp, ng);
+            let src = emit_expression(instructions, *exp, ng);
             let dst = TValue::Var(ng.get_name());
             let tacky_instruction = TInstruction::Unary(tacky_op, src, dst.clone());
             instructions.push(tacky_instruction);
@@ -196,11 +196,11 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             let copy1 = TInstruction::Copy(TValue::Constant(1), result.clone());
             let jumpend = TInstruction::Jump(label_end.clone());
 
-            let v1 = emit_instruction(instructions, src.as_ref().clone(), ng);
+            let v1 = emit_expression(instructions, src.as_ref().clone(), ng);
             let jz1 = TInstruction::JumpIfZero(v1.clone(), false_label.clone());
             instructions.push(jz1);
 
-            let v2 = emit_instruction(instructions, dst.as_ref().clone(), ng);
+            let v2 = emit_expression(instructions, dst.as_ref().clone(), ng);
             let jz2 = TInstruction::JumpIfZero(v2.clone(), false_label.clone());
             instructions.push(jz2);
 
@@ -220,11 +220,11 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             let copy1 = TInstruction::Copy(TValue::Constant(1), result.clone());
             let jumpend = TInstruction::Jump(label_end.clone());
 
-            let v1 = emit_instruction(instructions, src.as_ref().clone(), ng);
+            let v1 = emit_expression(instructions, src.as_ref().clone(), ng);
             let jnz1 = TInstruction::JumpIfNotZero(v1.clone(), true_label.clone());
             instructions.push(jnz1);
 
-            let v2 = emit_instruction(instructions, *dst, ng);
+            let v2 = emit_expression(instructions, *dst, ng);
             let jiz2 = TInstruction::JumpIfNotZero(v2.clone(), true_label.clone());
             instructions.push(jiz2);
 
@@ -237,8 +237,8 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             result
         }
         AstExp::Binary(op, exp1, exp2) => {
-            let v1 = emit_instruction(instructions, *exp1, ng);
-            let v2 = emit_instruction(instructions, *exp2, ng);
+            let v1 = emit_expression(instructions, *exp1, ng);
+            let v2 = emit_expression(instructions, *exp2, ng);
             let dst_name = ng.get_name();
             let dst = TValue::Var(dst_name);
             let tacky_op = TBinaryOp::from(op);
@@ -251,7 +251,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
                 AstExp::Var(name) => name,
                 _ => unreachable!(),
             };
-            let rhs = emit_instruction(instructions, *rhs, ng);
+            let rhs = emit_expression(instructions, *rhs, ng);
             let var = TValue::Var(name);
             let copy = TInstruction::Copy(rhs, var.clone());
             instructions.push(copy);
@@ -263,11 +263,11 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             then,
             els,
         } => {
-            let c = emit_instruction(instructions, *condition, ng);
+            let c = emit_expression(instructions, *condition, ng);
             let e2 = ng.get_label();
             let jz = TInstruction::JumpIfZero(c, e2.clone());
             instructions.push(jz);
-            let v1 = emit_instruction(instructions, *then, ng);
+            let v1 = emit_expression(instructions, *then, ng);
             let result = TValue::Var(ng.get_name());
             let copy = TInstruction::Copy(v1, result.clone());
             instructions.push(copy);
@@ -276,7 +276,7 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
             instructions.push(jmp_end);
             let e2_label = TInstruction::Label(e2);
             instructions.push(e2_label);
-            let v2 = emit_instruction(instructions, *els, ng);
+            let v2 = emit_expression(instructions, *els, ng);
             let copy = TInstruction::Copy(v2, result.clone());
             instructions.push(copy);
             let end_label = TInstruction::Label(end);
@@ -286,18 +286,122 @@ fn emit_instruction(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGe
     }
 }
 
+fn emit_forinit(forinit: AstForInit, instructions: &mut TInstructions, ng: &mut NameGenerator) {
+    match forinit {
+        AstForInit::InitDecl(dec) => emit_declaration(dec, instructions, ng),
+        AstForInit::InitExp(Some(exp)) => {
+            let _ = emit_expression(instructions, exp, ng);
+        }
+        _ => (),
+    }
+}
+
 fn emit_statement(
     statement: AstStatement,
     instructions: &mut TInstructions,
     ng: &mut NameGenerator,
 ) {
     match statement {
+        AstStatement::DoWhile {
+            condition,
+            body,
+            label,
+        } => {
+            let continue_label = format!("continue_{label}");
+            let break_label = format!("break_{label}");
+            let start_label = format!("start_{label}");
+
+            let start = TInstruction::Label(start_label.clone());
+            instructions.push(start);
+
+            emit_statement(*body, instructions, ng);
+
+            let cont = TInstruction::Label(continue_label.clone());
+            instructions.push(cont);
+
+            let v = emit_expression(instructions, condition, ng);
+            let jnz = TInstruction::JumpIfNotZero(v, start_label);
+            instructions.push(jnz);
+
+            let brk = TInstruction::Label(break_label);
+            instructions.push(brk);
+        }
+        AstStatement::For {
+            init,
+            condition,
+            post,
+            body,
+            label,
+        } => {
+            let continue_label = format!("continue_{label}");
+            let break_label = format!("break_{label}");
+            let start_label = format!("start_{label}");
+
+            emit_forinit(init, instructions, ng);
+
+            let start = TInstruction::Label(start_label.clone());
+            instructions.push(start);
+
+            if let Some(exp) = condition {
+                let v = emit_expression(instructions, exp, ng);
+                let jz = TInstruction::JumpIfZero(v, break_label.clone());
+                instructions.push(jz);
+            }
+
+            emit_statement(*body, instructions, ng);
+
+            let cont = TInstruction::Label(continue_label);
+            instructions.push(cont);
+
+            if let Some(exp) = post {
+                let _ = emit_expression(instructions, exp, ng);
+            }
+
+            let jmp = TInstruction::Jump(start_label);
+            instructions.push(jmp);
+
+            let brk = TInstruction::Label(break_label);
+            instructions.push(brk);
+        }
+        AstStatement::While {
+            condition,
+            body,
+            label,
+        } => {
+            let continue_label = format!("continue_{label}");
+            let break_label = format!("break_{label}");
+
+            let cont = TInstruction::Label(continue_label.clone());
+            instructions.push(cont);
+
+            let v = emit_expression(instructions, condition, ng);
+            let jz = TInstruction::JumpIfZero(v, break_label.clone());
+            instructions.push(jz);
+
+            emit_statement(*body, instructions, ng);
+
+            let jump = TInstruction::Jump(continue_label);
+            instructions.push(jump);
+
+            let brk = TInstruction::Label(break_label);
+            instructions.push(brk);
+        }
+        AstStatement::Break(label) => {
+            let break_label = format!("break_{label}");
+            let jump = TInstruction::Jump(break_label);
+            instructions.push(jump);
+        }
+        AstStatement::Continue(label) => {
+            let continue_label = format!("continue_{label}");
+            let jump = TInstruction::Jump(continue_label);
+            instructions.push(jump);
+        }
         AstStatement::If {
             condition,
             then,
             els,
         } => {
-            let c = emit_instruction(instructions, condition, ng);
+            let c = emit_expression(instructions, condition, ng);
             let end_or_else = ng.get_label();
             let jz = TInstruction::JumpIfZero(c, end_or_else.clone());
             instructions.push(jz);
@@ -331,11 +435,11 @@ fn emit_statement(
             emit_statement(*statement, instructions, ng);
         }
         AstStatement::Return(e) => {
-            let value = emit_instruction(instructions, e, ng);
+            let value = emit_expression(instructions, e, ng);
             instructions.push(TInstruction::Return(value));
         }
         AstStatement::Exp(e) => {
-            emit_instruction(instructions, e, ng);
+            emit_expression(instructions, e, ng);
         }
         AstStatement::Null => (),
     }
@@ -343,7 +447,7 @@ fn emit_statement(
 
 fn emit_declaration(d: AstDeclaration, instructions: &mut TInstructions, ng: &mut NameGenerator) {
     if let Some(init) = d.init {
-        let rhs = emit_instruction(instructions, init, ng);
+        let rhs = emit_expression(instructions, init, ng);
         let var = TValue::Var(d.name.clone());
         let copy = TInstruction::Copy(rhs, var.clone());
         instructions.push(copy);

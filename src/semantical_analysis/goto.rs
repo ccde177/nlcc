@@ -16,6 +16,12 @@ fn intersect_ls(ls: &LabelSet, other: &LabelSet) -> Result<LabelSet> {
 fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
     let mut ls = LabelSet::new();
     match statement {
+        AstStatement::While { body, .. }
+        | AstStatement::DoWhile { body, .. }
+        | AstStatement::For { body, .. } => {
+            let body_collect = collect_labels_statement(body)?;
+            ls = intersect_ls(&ls, &body_collect)?;
+        }
         AstStatement::LabeledStatement(name, st) => {
             if ls.contains(name) {
                 return Err(SemAnalysisError::LabelRedeclaration(name.clone()));
@@ -38,6 +44,8 @@ fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
             ls = intersect_ls(&ls, &inner_ls)?;
         }
         AstStatement::Exp(_)
+        | AstStatement::Break(_)
+        | AstStatement::Continue(_)
         | AstStatement::Return(_)
         | AstStatement::Null
         | AstStatement::Goto(_) => (),
