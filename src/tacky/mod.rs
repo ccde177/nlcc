@@ -387,13 +387,11 @@ fn emit_statement(
             instructions.push(brk);
         }
         AstStatement::Break(label) => {
-            let break_label = format!("break_{label}");
-            let jump = TInstruction::Jump(break_label);
+            let jump = TInstruction::Jump(label);
             instructions.push(jump);
         }
         AstStatement::Continue(label) => {
-            let continue_label = format!("continue_{label}");
-            let jump = TInstruction::Jump(continue_label);
+            let jump = TInstruction::Jump(label);
             instructions.push(jump);
         }
         AstStatement::If {
@@ -442,6 +440,7 @@ fn emit_statement(
             emit_expression(instructions, e, ng);
         }
         AstStatement::Null => (),
+        _ => unimplemented!()
     }
 }
 

@@ -1,50 +1,159 @@
 use super::{Result, SemAnalysisError};
 use crate::parser::*;
 
+#[derive(Default)]
 struct NameGenerator {
-    count: i64,
+    counter: u64,
+    loop_stack: Vec<Identifier>,
+    switch_stack: Vec<Identifier>,
+    ctx_stack: Vec<GeneratorCtx>,
+    ctx: GeneratorCtx,
+}
+
+#[derive(Default, Copy, Clone)]
+enum GeneratorCtx {
+    Switch,
+    Loop,
+    #[default]
+    None,
 }
 
 impl NameGenerator {
     fn new() -> Self {
-        Self { count: 0 }
+        Self::default()
     }
 
-    fn generate_label(&mut self) -> Identifier {
-        let id = self.count;
-        self.count += 1;
-        format!("loop_label.{id}")
+    fn label_continue(&self) -> Option<Identifier> {
+        self.loop_stack.last().map(|ll| format!("continue_{ll}"))
+    }
+
+    fn label_break(&self) -> Option<Identifier> {
+        match self.ctx {
+            GeneratorCtx::Switch => self.switch_stack.last().map(|sl| format!("break_{sl}")),
+            GeneratorCtx::Loop => self.loop_stack.last().map(|ll| format!("break_{ll}")),
+            GeneratorCtx::None => None,
+        }
+    }
+
+    fn label_case(&self, case: u64) -> Option<Identifier> {
+        self.switch_stack
+            .last()
+            .map(|sl| format!("case_{case}_{sl}"))
+    }
+
+    fn label_default_case(&self) -> Option<Identifier> {
+        self.switch_stack
+            .last()
+            .map(|sl| format!("case_default_{sl}"))
+    }
+
+    fn new_switch_ctx(&mut self) -> Identifier {
+        self.ctx_stack.push(self.ctx);
+        self.ctx = GeneratorCtx::Switch;
+        self.counter += 1;
+
+        let id = self.counter;
+        let label = format!("switch_label.{id}");
+
+        self.switch_stack.push(label.clone());
+        label
+    }
+
+    fn new_loop_ctx(&mut self) -> Identifier {
+        self.ctx_stack.push(self.ctx);
+        self.ctx = GeneratorCtx::Loop;
+        self.counter += 1;
+
+        let id = self.counter;
+        let label = format!("loop_label.{id}");
+
+        self.loop_stack.push(label.clone());
+        label
+    }
+
+    fn exit_ctx(&mut self) {
+        match self.ctx {
+            GeneratorCtx::Loop => {
+                self.loop_stack.pop();
+            }
+            GeneratorCtx::Switch => {
+                self.switch_stack.pop();
+            }
+            GeneratorCtx::None => (),
+        }
+        if let Some(old_ctx) = self.ctx_stack.pop() {
+            self.ctx = old_ctx;
+        }
     }
 }
 
-fn label_statement(
-    statement: AstStatement,
-    current_label: Option<Identifier>,
-    ng: &mut NameGenerator,
-) -> Result<AstStatement> {
+fn label_statement(statement: AstStatement, ng: &mut NameGenerator) -> Result<AstStatement> {
     match statement {
-        AstStatement::While {
-            condition, body, ..
-        } => {
-            let new_label = ng.generate_label();
-            let labeled_body = label_statement(*body, Some(new_label.clone()), ng).map(Box::new)?;
+        AstStatement::LabeledStatement(label, st) => {
+            let st = label_statement(*st, ng).map(Box::new)?;
+            Ok(AstStatement::LabeledStatement(label, st))
+        }
+        AstStatement::Compound(block) => {
+            let block = label_block(block, ng)?;
+            Ok(AstStatement::Compound(block))
+        }
+        AstStatement::Break(_) => {
+            let label = ng
+                .label_break()
+                .ok_or(SemAnalysisError::BreakOutsideOfLoop)?;
+            Ok(AstStatement::Break(label))
+        }
+        AstStatement::DefaultCase { statement, .. } => {
+            let label = ng
+                .label_default_case()
+                .ok_or(SemAnalysisError::DefaultNotInSwitch)?;
+            let statement = label_statement(*statement, ng).map(Box::new)?;
+            Ok(AstStatement::DefaultCase { statement, label })
+        }
+        AstStatement::Case { exp, statement, .. } => {
+            let const_exp = exp
+                .get_const()
+                .ok_or(SemAnalysisError::NotAConstCase(exp.clone()))?;
+            let label = ng
+                .label_case(const_exp)
+                .ok_or(SemAnalysisError::CaseNotInSwitch)?;
+            let statement = label_statement(*statement, ng).map(Box::new)?;
 
-            Ok(AstStatement::While {
-                label: new_label,
-                body: labeled_body,
-                condition,
+            Ok(AstStatement::Case {
+                exp,
+                statement,
+                label,
             })
         }
-        AstStatement::DoWhile {
-            condition, body, ..
+        AstStatement::Switch {
+            ctrl_exp,
+            body,
+            cases,
+            ..
         } => {
-            let new_label = ng.generate_label();
-            let labeled_body = label_statement(*body, Some(new_label.clone()), ng).map(Box::new)?;
-
-            Ok(AstStatement::DoWhile {
-                label: new_label,
-                body: labeled_body,
+            let label = ng.new_switch_ctx();
+            let body = label_statement(*body, ng).map(Box::new)?;
+            ng.exit_ctx();
+            Ok(AstStatement::Switch {
+                ctrl_exp,
+                body,
+                cases,
+                label,
+            })
+        }
+        AstStatement::If {
+            condition,
+            then,
+            els,
+        } => {
+            let then = label_statement(*then, ng).map(Box::new)?;
+            let els = els.map_or(Ok(None), |bst| {
+                label_statement(*bst, ng).map(Box::new).map(Some)
+            })?;
+            Ok(AstStatement::If {
                 condition,
+                then,
+                els,
             })
         }
         AstStatement::For {
@@ -54,74 +163,68 @@ fn label_statement(
             body,
             ..
         } => {
-            let new_label = ng.generate_label();
-            let labeled_body = label_statement(*body, Some(new_label.clone()), ng).map(Box::new)?;
+            let label = ng.new_loop_ctx();
+            let body = label_statement(*body, ng).map(Box::new)?;
             Ok(AstStatement::For {
-                label: new_label,
-                body: labeled_body,
                 init,
                 condition,
                 post,
+                body,
+                label,
             })
         }
-        AstStatement::If {
-            condition,
-            then,
-            els,
+        AstStatement::Continue(_) => {
+            let label = ng
+                .label_continue()
+                .ok_or(SemAnalysisError::ContinueOutsideOfLoop)?;
+            Ok(AstStatement::Continue(label))
+        }
+        AstStatement::DoWhile {
+            condition, body, ..
         } => {
-            let labeled_then = label_statement(*then, current_label.clone(), ng).map(Box::new)?;
-            let labeled_els = els.map_or(Ok(None), |st| {
-                label_statement(*st, current_label, ng)
-                    .map(Box::new)
-                    .map(Some)
-            })?;
-            Ok(AstStatement::If {
+            let label = ng.new_loop_ctx();
+            let body = label_statement(*body, ng).map(Box::new)?;
+            ng.exit_ctx();
+            Ok(AstStatement::DoWhile {
                 condition,
-                then: labeled_then,
-                els: labeled_els,
+                body,
+                label,
             })
         }
-        AstStatement::Compound(block) => {
-            let labeled_block = label_block(block, current_label, ng)?;
-            Ok(AstStatement::Compound(labeled_block))
+        AstStatement::While {
+            condition, body, ..
+        } => {
+            let label = ng.new_loop_ctx();
+            let body = label_statement(*body, ng).map(Box::new)?;
+            ng.exit_ctx();
+            Ok(AstStatement::While {
+                condition,
+                label,
+                body,
+            })
         }
-        AstStatement::LabeledStatement(label, st) => {
-            let labeled_body = label_statement(*st, current_label, ng).map(Box::new)?;
-            Ok(AstStatement::LabeledStatement(label, labeled_body))
-        }
-        AstStatement::Break(_) => current_label
-            .ok_or(SemAnalysisError::BreakOutsideOfLoop)
-            .map(AstStatement::Break),
-        AstStatement::Continue(_) => current_label
-            .ok_or(SemAnalysisError::ContinueOutsideOfLoop)
-            .map(AstStatement::Continue),
-        _ => Ok(statement),
+        AstStatement::Null
+        | AstStatement::Return(_)
+        | AstStatement::Goto(_)
+        | AstStatement::Exp(_) => Ok(statement),
     }
 }
 
-fn label_block_item(
-    item: AstBlockItem,
-    current_label: Option<Identifier>,
-    ng: &mut NameGenerator,
-) -> Result<AstBlockItem> {
+fn label_block_item(item: AstBlockItem, ng: &mut NameGenerator) -> Result<AstBlockItem> {
     match item {
         AstBlockItem::S(statement) => {
-            let labeled_statement = label_statement(statement, current_label, ng)?;
+            let labeled_statement = label_statement(statement, ng)?;
             Ok(AstBlockItem::S(labeled_statement))
         }
         _ => Ok(item),
     }
 }
 
-fn label_block(
-    block: AstBlock,
-    current_label: Option<Identifier>,
-    ng: &mut NameGenerator,
-) -> Result<AstBlock> {
+fn label_block(block: AstBlock, ng: &mut NameGenerator) -> Result<AstBlock> {
     let AstBlock { items } = block;
     let labeled_items = items
         .into_iter()
-        .map(|item| label_block_item(item, current_label.clone(), ng))
+        .map(|item| label_block_item(item, ng))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(AstBlock {
@@ -130,12 +233,9 @@ fn label_block(
 }
 
 pub fn label_loops(f: AstFunction) -> Result<AstFunction> {
-    let AstFunction{name, body} = f;
+    let AstFunction { name, body } = f;
     let mut ng = NameGenerator::new();
-    let body = label_block(body, None, &mut ng)?;
-    
-    Ok(AstFunction{
-        name,
-        body
-    })
+    let body = label_block(body, &mut ng)?;
+
+    Ok(AstFunction { name, body })
 }

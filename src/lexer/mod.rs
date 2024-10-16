@@ -61,7 +61,10 @@ pub enum Token {
     While,
     For,
     Break,
-    Continue
+    Continue,
+    Case,
+    KwDefault,
+    Switch,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -161,6 +164,9 @@ impl From<&str> for Token {
             "for" => Self::For,
             "break" => Self::Break,
             "continue" => Self::Continue,
+            "case" => Self::Case,
+            "default" => Self::KwDefault,
+            "switch" => Self::Switch,
             _ => Self::Identifier(s.to_string()),
         }
     }

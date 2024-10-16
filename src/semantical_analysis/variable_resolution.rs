@@ -102,6 +102,41 @@ fn resolve_statement(
     ng: &mut NameGenerator,
 ) -> Result<AstStatement> {
     match st {
+        AstStatement::Switch {
+            ctrl_exp,
+            body,
+            cases,
+            label,
+        } => {
+            let ctrl_exp = resolve_exp(ctrl_exp, vm)?;
+            let body = resolve_statement(*body, vm, ng).map(Box::new)?;
+            Ok(AstStatement::Switch {
+                ctrl_exp,
+                body,
+                cases,
+                label,
+            })
+        }
+        AstStatement::Case {
+            exp,
+            statement,
+            label,
+        } => {
+            //Do not resolve exp because it is gonna be checked in other semantical analysis pass
+            let statement = resolve_statement(*statement, vm, ng).map(Box::new)?;
+            Ok(AstStatement::Case {
+                exp,
+                statement,
+                label,
+            })
+        }
+        AstStatement::DefaultCase{statement, label } => {
+            let statement = resolve_statement(*statement, vm, ng).map(Box::new)?;
+            Ok(AstStatement::DefaultCase {
+                statement,
+                label
+            })
+        }
         AstStatement::While {
             condition,
             body,
@@ -254,13 +289,10 @@ fn resolve_block(block: AstBlock, mut vm: VariableMap, ng: &mut NameGenerator) -
 }
 
 pub fn variable_resolution(f: AstFunction) -> Result<AstFunction> {
-    let AstFunction {body, name} = f;
+    let AstFunction { body, name } = f;
     let scope = VariableMap::new();
     let mut ng = NameGenerator::new();
     let body = resolve_block(body, scope, &mut ng)?;
-    
-    Ok(AstFunction {
-        name,
-        body
-    })
+
+    Ok(AstFunction { name, body })
 }

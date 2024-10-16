@@ -18,7 +18,14 @@ fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
     match statement {
         AstStatement::While { body, .. }
         | AstStatement::DoWhile { body, .. }
-        | AstStatement::For { body, .. } => {
+        | AstStatement::For { body, .. }
+        | AstStatement::Case {
+            statement: body, ..
+        }
+        | AstStatement::DefaultCase {
+            statement: body, ..
+        }
+        | AstStatement::Switch { body, .. } => {
             let body_collect = collect_labels_statement(body)?;
             ls = intersect_ls(&ls, &body_collect)?;
         }
@@ -64,17 +71,47 @@ fn collect_labels_bims(items: &AstBlockItems) -> Result<LabelSet> {
     Ok(ls)
 }
 
-fn validate_labels_bi(item: &AstBlockItem, ls: &LabelSet) -> Result<()> {
-    match item {
-        AstBlockItem::S(AstStatement::Goto(label)) => {
+fn validate_statement(st: &AstStatement, ls: &LabelSet) -> Result<()> {
+    match st {
+        AstStatement::Goto(label) => {
             if !ls.contains(label) {
                 return Err(SemAnalysisError::UnknownLabel(label.clone()));
             }
         }
-        AstBlockItem::S(AstStatement::Compound(block)) => {
+        AstStatement::Compound(block) => {
             validate_labels_b(block, ls)?;
         }
-        _ => (),
+        AstStatement::While { body, .. }
+        | AstStatement::DoWhile { body, .. }
+        | AstStatement::For { body, .. }
+        | AstStatement::Switch { body, .. }
+        | AstStatement::Case {
+            statement: body, ..
+        }
+        | AstStatement::LabeledStatement(_, body)
+        | AstStatement::DefaultCase {
+            statement: body, ..
+        } => {
+            validate_statement(body, ls)?;
+        }
+        AstStatement::If { then, els, .. } => {
+            validate_statement(then, ls)?;
+            if let Some(els) = els {
+                validate_statement(els, ls)?;
+            }
+        }
+        AstStatement::Break(_)
+        | AstStatement::Null
+        | AstStatement::Continue(_)
+        | AstStatement::Return(_)
+        | AstStatement::Exp(_) => (),
+    }
+    Ok(())
+}
+
+fn validate_labels_bi(item: &AstBlockItem, ls: &LabelSet) -> Result<()> {
+    if let AstBlockItem::S(s) = item {
+        validate_statement(s, ls)?;
     }
     Ok(())
 }

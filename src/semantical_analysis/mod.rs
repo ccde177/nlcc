@@ -1,11 +1,13 @@
+mod case_collection;
 mod goto;
-mod variable_resolution;
 mod loop_labeling;
+mod variable_resolution;
 
 use crate::parser::*;
+use case_collection::collect_cases;
 use goto::ensure_goto_correctness;
-use variable_resolution::variable_resolution;
 use loop_labeling::label_loops;
+use variable_resolution::variable_resolution;
 
 use std::fmt;
 
@@ -18,8 +20,12 @@ pub enum SemAnalysisError {
     WrongLvalue(AstExp),
     LabelRedeclaration(Identifier),
     UnknownLabel(Identifier),
+    DuplicateCase(Identifier),
     BreakOutsideOfLoop,
-    ContinueOutsideOfLoop
+    ContinueOutsideOfLoop,
+    CaseNotInSwitch,
+    NotAConstCase(AstExp),
+    DefaultNotInSwitch,
 }
 
 impl fmt::Display for SemAnalysisError {
@@ -32,6 +38,12 @@ impl fmt::Display for SemAnalysisError {
             Self::UnknownLabel(name) => write!(f, "Unknown label {name}"),
             Self::BreakOutsideOfLoop => write!(f, "break statement outside of loop"),
             Self::ContinueOutsideOfLoop => write!(f, "continue statement outside of loop"),
+            Self::CaseNotInSwitch => write!(f, "case not in switch"),
+            Self::NotAConstCase(exp) => {
+                write!(f, "Not a const expression inside case label: {exp:?}")
+            }
+            Self::DefaultNotInSwitch => write!(f, "default case not in switch"),
+            Self::DuplicateCase(case) => write!(f, "Duplicate case {case:?}"),
         }
     }
 }
@@ -40,8 +52,10 @@ impl std::error::Error for SemAnalysisError {}
 
 pub fn validate(ast: Ast) -> Result<Ast> {
     let Ast::FunDef(function) = ast;
-    let function = variable_resolution(function).and_then(label_loops)?;
-    
+    let function = variable_resolution(function)
+        .and_then(label_loops)
+        .and_then(collect_cases)?;
+
     ensure_goto_correctness(&function)?;
 
     Ok(Ast::FunDef(function))

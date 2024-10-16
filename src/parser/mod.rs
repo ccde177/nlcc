@@ -62,6 +62,21 @@ pub enum AstStatement {
         then: Box<AstStatement>,
         els: Option<Box<AstStatement>>,
     },
+    Switch {
+        ctrl_exp: AstExp,
+        body: Box<AstStatement>,
+        cases: Vec<(Option<u64>, Identifier)>,
+        label: Identifier,
+    },
+    Case {
+        exp: AstExp,
+        statement: Box<AstStatement>,
+        label: Identifier
+    },
+    DefaultCase{
+        statement: Box<AstStatement>,
+        label: Identifier
+    },
     LabeledStatement(Identifier, Box<AstStatement>),
     Continue(Identifier),
     Compound(AstBlock),
@@ -157,6 +172,17 @@ impl std::error::Error for ParseError {}
 impl AstExp {
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
+    }
+
+    pub fn is_const(&self) -> bool {
+        matches!(self, AstExp::Constant(_))
+    }
+
+    pub fn get_const(&self) -> Option<u64> {
+        match self {
+            AstExp::Constant(u) => Some(*u),
+            _ => None
+        }
     }
 }
 
@@ -453,6 +479,39 @@ fn parse_forinit(tokens: &mut Tokens) -> Result<AstForInit> {
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
     let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
+        Token::Case => {
+            take_token(tokens);
+            let exp = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::Colon)?;
+            let statement = parse_statement(tokens).map(Box::new)?;
+            Ok(AstStatement::Case{
+                label: String::new(),
+                exp,
+                statement,
+            })
+        }
+        Token::KwDefault => {
+            take_token(tokens);
+            expect_token(tokens, Token::Colon)?;
+            let statement = parse_statement(tokens).map(Box::new)?;
+            Ok(AstStatement::DefaultCase{
+                label: String::new(),
+                statement
+            })
+        }
+        Token::Switch => {
+            take_token(tokens);
+            expect_token(tokens, Token::OpenParanth)?;
+            let ctrl_exp = parse_exp(tokens, 0)?;
+            expect_token(tokens, Token::CloseParanth)?;
+            let body = parse_statement(tokens).map(Box::new)?;
+            Ok(AstStatement::Switch {
+                cases: vec![],
+                label: String::new(),
+                ctrl_exp,
+                body,
+            })
+        }
         Token::Break => {
             take_token(tokens);
             expect_token(tokens, Token::Semicolon)?;
@@ -469,10 +528,10 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
             let condition = parse_exp(tokens, 0)?;
             expect_token(tokens, Token::CloseParanth)?;
             let body = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::While{
+            Ok(AstStatement::While {
                 label: "".into(),
                 condition,
-                body
+                body,
             })
         }
         Token::Do => {
@@ -486,7 +545,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
             Ok(AstStatement::DoWhile {
                 label: "".into(),
                 body,
-                condition
+                condition,
             })
         }
         Token::For => {
@@ -504,7 +563,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
                 init,
                 condition,
                 post,
-                body
+                body,
             })
         }
         Token::If => {
