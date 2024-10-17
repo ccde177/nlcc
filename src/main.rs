@@ -7,7 +7,7 @@ mod codegen;
 mod emission;
 mod lexer;
 mod parser;
-mod semantical_analysis;
+mod semantic_analysis;
 mod tacky;
 mod ast;
 
@@ -74,7 +74,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let validated_ast = semantical_analysis::validate(ast)?;
+    let validated_ast = semantic_analysis::validate(ast)?;
 
     if args.validate {
         dbg!(validated_ast);
