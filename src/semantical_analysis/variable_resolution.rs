@@ -1,5 +1,5 @@
-use crate::parser::*;
 use crate::semantical_analysis::{Result, SemAnalysisError};
+use crate::ast::*;
 
 use std::collections::HashMap;
 
@@ -244,10 +244,10 @@ fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
             e,
         ) => {
             let exp = resolve_exp(*e, vm)?;
-            if !exp.is_var() {
-                Err(SemAnalysisError::WrongLvalue(exp))
-            } else {
+            if exp.is_var() {
                 Ok(AstExp::Unary(op, Box::new(exp)))
+            } else {
+                Err(SemAnalysisError::WrongLvalue(exp))
             }
         }
         AstExp::Var(name) => vm
@@ -269,7 +269,7 @@ fn resolve_exp(exp: AstExp, vm: &mut VariableMap) -> Result<AstExp> {
 
 fn resolve_block(block: AstBlock, mut vm: VariableMap, ng: &mut NameGenerator) -> Result<AstBlock> {
     let mut result = AstBlockItems::new();
-    for item in block.items.into_iter() {
+    for item in block.items {
         match item {
             AstBlockItem::S(statement) => {
                 let statement = resolve_statement(statement, &mut vm, ng)?;

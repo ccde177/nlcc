@@ -1,5 +1,5 @@
 use super::{Result, SemAnalysisError};
-use crate::parser::*;
+use crate::ast::*;
 
 #[derive(Default)]
 struct NameGenerator {
@@ -216,7 +216,7 @@ fn label_block_item(item: AstBlockItem, ng: &mut NameGenerator) -> Result<AstBlo
             let labeled_statement = label_statement(statement, ng)?;
             Ok(AstBlockItem::S(labeled_statement))
         }
-        _ => Ok(item),
+        AstBlockItem::D(_) => Ok(item),
     }
 }
 

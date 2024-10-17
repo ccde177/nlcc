@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tacky_tests;
 
-use crate::parser::*;
+use crate::ast::*;
 
 pub type Identifier = String;
 pub type TInstructions = Vec<TInstruction>;
@@ -62,18 +62,18 @@ pub enum TUnaryOp {
 }
 
 impl TBinaryOp {
-    pub fn is_shift(&self) -> bool {
+    pub fn is_shift(self) -> bool {
         matches!(self, TBinaryOp::ShiftLeft | TBinaryOp::ShiftRight)
     }
-    pub fn is_div(&self) -> bool {
+    pub fn is_div(self) -> bool {
         matches!(self, TBinaryOp::Divide)
     }
 
-    pub fn is_rem(&self) -> bool {
+    pub fn is_rem(self) -> bool {
         matches!(self, TBinaryOp::Reminder)
     }
 
-    pub fn is_comp(&self) -> bool {
+    pub fn is_comp(self) -> bool {
         matches!(
             self,
             Self::IsEqual
@@ -225,8 +225,8 @@ fn emit_expression(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGen
             instructions.push(jnz1);
 
             let v2 = emit_expression(instructions, *dst, ng);
-            let jiz2 = TInstruction::JumpIfNotZero(v2.clone(), true_label.clone());
-            instructions.push(jiz2);
+            let jnz2 = TInstruction::JumpIfNotZero(v2.clone(), true_label.clone());
+            instructions.push(jnz2);
 
             instructions.push(copy0);
             instructions.push(jumpend);
@@ -247,9 +247,8 @@ fn emit_expression(instructions: &mut TInstructions, e: AstExp, ng: &mut NameGen
             dst
         }
         AstExp::Assignment(var, rhs) => {
-            let name = match *var {
-                AstExp::Var(name) => name,
-                _ => unreachable!(),
+            let AstExp::Var(name) = *var else {
+                unreachable!()
             };
             let rhs = emit_expression(instructions, *rhs, ng);
             let var = TValue::Var(name);
@@ -292,7 +291,7 @@ fn emit_forinit(forinit: AstForInit, instructions: &mut TInstructions, ng: &mut 
         AstForInit::InitExp(Some(exp)) => {
             let _ = emit_expression(instructions, exp, ng);
         }
-        _ => (),
+        AstForInit::InitExp(_) => (),
     }
 }
 
@@ -310,7 +309,7 @@ fn emit_statement(
         } => {
             let v = emit_expression(instructions, ctrl_exp, ng);
             let mut default = None;
-            let label_end = format!("break_{}", label);
+            let label_end = format!("break_{label}");
             for case in cases {
                 if let Some(value) = case.0 {
                     let cmp_result = TValue::Var(ng.get_name());
@@ -324,7 +323,7 @@ fn emit_statement(
                     let jnz = TInstruction::JumpIfNotZero(cmp_result, case.1);
                     instructions.push(jnz);
                 } else {
-                    default = Some(case.1)
+                    default = Some(case.1);
                 }
             }
 
@@ -341,14 +340,10 @@ fn emit_statement(
             let tlabel_end = TInstruction::Label(label_end);
             instructions.push(tlabel_end);
         }
-        AstStatement::DefaultCase { statement, label } => {
-            let label = TInstruction::Label(label);
-            instructions.push(label);
-            emit_statement(*statement, instructions, ng);
-        }
         AstStatement::Case {
             statement, label, ..
-        } => {
+        }
+        | AstStatement::DefaultCase { statement, label } => {
             let label = TInstruction::Label(label);
             instructions.push(label);
             emit_statement(*statement, instructions, ng);
@@ -437,11 +432,7 @@ fn emit_statement(
             let brk = TInstruction::Label(break_label);
             instructions.push(brk);
         }
-        AstStatement::Break(label) => {
-            let jump = TInstruction::Jump(label);
-            instructions.push(jump);
-        }
-        AstStatement::Continue(label) => {
+        AstStatement::Break(label) | AstStatement::Continue(label) | AstStatement::Goto(label) => {
             let jump = TInstruction::Jump(label);
             instructions.push(jump);
         }
@@ -474,10 +465,6 @@ fn emit_statement(
             let mut block_items = emit_block_items(items, ng);
             instructions.append(&mut block_items);
         }
-        AstStatement::Goto(label) => {
-            let jump = TInstruction::Jump(label);
-            instructions.push(jump);
-        }
         AstStatement::LabeledStatement(name, statement) => {
             let label = TInstruction::Label(name);
             instructions.push(label);
@@ -505,7 +492,7 @@ fn emit_declaration(d: AstDeclaration, instructions: &mut TInstructions, ng: &mu
 
 fn emit_block_items(blockitems: AstBlockItems, ng: &mut NameGenerator) -> TInstructions {
     let mut instructions = TInstructions::new();
-    for block in blockitems.into_iter() {
+    for block in blockitems {
         match block {
             AstBlockItem::S(s) => emit_statement(s, &mut instructions, ng),
             AstBlockItem::D(d) => emit_declaration(d, &mut instructions, ng),
@@ -524,6 +511,7 @@ fn emit_function(f: AstFunction) -> TFunction {
     TFunction::FunDef(f.name, body)
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub fn emit_tacky(input: Ast) -> TAst {
     let Ast::FunDef(f) = input;
     let tfunction = emit_function(f);

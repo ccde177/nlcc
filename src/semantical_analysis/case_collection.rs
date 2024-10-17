@@ -1,5 +1,5 @@
 use super::{Result, SemAnalysisError};
-use crate::parser::*;
+use crate::ast::*;
 
 use std::collections::HashSet;
 
@@ -178,7 +178,7 @@ fn collect_block(block: AstBlock) -> Result<(AstBlock, Cases)> {
     let mut cases = Cases::new();
     let mut result_items = AstBlockItems::new();
 
-    for item in items.into_iter() {
+    for item in items {
         let (new_item, inner_cases) = collect_bi(item)?;
         if let Some(next) = cases.intersection(&inner_cases).next() {
             return Err(SemAnalysisError::DuplicateCase(next.1.clone()));

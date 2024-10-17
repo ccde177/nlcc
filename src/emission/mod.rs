@@ -1,4 +1,4 @@
-use crate::codegen::*;
+use crate::codegen::{AsmAst, BinaryOp, Condition, Function, Instruction, Operand, Register, UnaryOp};
 
 use std::fmt;
 
@@ -20,7 +20,7 @@ impl fmt::Display for Operand {
             Self::Imm(i) => write!(f, "${i}"),
             Self::Reg(r) => write!(f, "{r}"),
             Self::Stack(i) => write!(f, "-{i}(%rbp)"),
-            _ => unimplemented!(),
+            Self::Pseudo(_) => unreachable!(),
         }
     }
 }
@@ -57,7 +57,7 @@ impl fmt::Display for Function {
         //Prologue:
         writeln!(f, "\tpushq %rbp")?;
         writeln!(f, "\tmovq %rsp, %rbp")?;
-        for instruction in self.body.iter() {
+        for instruction in &self.body {
             writeln!(f, "\t{instruction}")?;
         }
         writeln!(f, ".section .note.GNU-stak,\"\",@progbits")?;
@@ -108,9 +108,8 @@ impl fmt::Display for Instruction {
             Self::Label(label) => write!(f, ".L{label}:"),
             Self::SetCC(cond_code, operand) => {
                 if operand.is_reg() {
-                    let reg = match operand {
-                        Operand::Reg(r) => r,
-                        _ => unreachable!(),
+                    let Operand::Reg(reg) = operand else {
+                        unreachable!()
                     };
                     let reg_str = match reg {
                         Register::Ax => "al",

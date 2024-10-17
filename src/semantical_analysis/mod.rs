@@ -3,7 +3,7 @@ mod goto;
 mod loop_labeling;
 mod variable_resolution;
 
-use crate::parser::*;
+use crate::ast::*;
 use case_collection::collect_cases;
 use goto::ensure_goto_correctness;
 use loop_labeling::label_loops;

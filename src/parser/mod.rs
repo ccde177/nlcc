@@ -1,144 +1,13 @@
 use crate::lexer::{Token, Tokens};
+use crate::ast::*;
 
 use std::fmt;
 
 #[cfg(test)]
 mod parser_tests;
 
-pub type Identifier = String;
 pub type Result<T> = std::result::Result<T, ParseError>;
-
-#[derive(Debug, Clone)]
-pub enum Ast {
-    FunDef(AstFunction),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AstFunction {
-    pub name: Identifier,
-    pub body: AstBlock,
-}
-
-pub type AstBlockItems = Vec<AstBlockItem>;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AstBlock {
-    pub items: AstBlockItems,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AstBlockItem {
-    S(AstStatement),
-    D(AstDeclaration),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AstDeclaration {
-    pub name: Identifier,
-    pub init: Option<AstExp>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum AstStatement {
-    While {
-        condition: AstExp,
-        body: Box<AstStatement>,
-        label: Identifier,
-    },
-    DoWhile {
-        condition: AstExp,
-        body: Box<AstStatement>,
-        label: Identifier,
-    },
-    For {
-        init: AstForInit,
-        condition: Option<AstExp>,
-        post: Option<AstExp>,
-        body: Box<AstStatement>,
-        label: Identifier,
-    },
-    If {
-        condition: AstExp,
-        then: Box<AstStatement>,
-        els: Option<Box<AstStatement>>,
-    },
-    Switch {
-        ctrl_exp: AstExp,
-        body: Box<AstStatement>,
-        cases: Vec<(Option<u64>, Identifier)>,
-        label: Identifier,
-    },
-    Case {
-        exp: AstExp,
-        statement: Box<AstStatement>,
-        label: Identifier,
-    },
-    DefaultCase {
-        statement: Box<AstStatement>,
-        label: Identifier,
-    },
-    LabeledStatement(Identifier, Box<AstStatement>),
-    Continue(Identifier),
-    Compound(AstBlock),
-    Break(Identifier),
-    Goto(Identifier),
-    Return(AstExp),
-    Exp(AstExp),
-    Null,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AstForInit {
-    InitDecl(AstDeclaration),
-    InitExp(Option<AstExp>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AstExp {
-    Conditional {
-        condition: Box<AstExp>,
-        then: Box<AstExp>,
-        els: Box<AstExp>,
-    },
-    Binary(AstBinaryOp, Box<AstExp>, Box<AstExp>),
-    Unary(AstUnaryOp, Box<AstExp>),
-    Assignment(Box<AstExp>, Box<AstExp>),
-    Var(Identifier),
-    Constant(u64),
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum AstBinaryOp {
-    Add,
-    Multiply,
-    Div,
-    Mod,
-    Substract,
-    LogicalAnd,
-    LogicalOr,
-    IsEqual,
-    IsNotEqual,
-    LessThan,
-    LessOrEqual,
-    GreaterThan,
-    GreaterOrEqual,
-    BitwiseAnd,
-    BitwiseOr,
-    BitwiseXor,
-    ShiftLeft,
-    ShiftRight,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum AstUnaryOp {
-    Complement,
-    Negate,
-    LogicalNot,
-    PostfixDecrement,
-    PrefixDecrement,
-    PostfixIncrement,
-    PrefixIncrement,
-}
+pub type Identifier = String;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseError {
@@ -155,12 +24,12 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::ExpectedButGot(t1, t2) => {
-                write!(f, "Expected token of type {:?} but got {:?}", t1, t2)
+                write!(f, "Expected token of type {t1:?} but got {t2:?}")
             }
-            Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {:?} but got None", t),
-            Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {:?}", ts),
+            Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {t:?} but got None"),
+            Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {ts:?}"),
             Self::ExpectedExpression => write!(f, "Expected expression"),
-            Self::BadExpression(t) => write!(f, "Bad expression starting with {:?}", t),
+            Self::BadExpression(t) => write!(f, "Bad expression starting with {t:?}"),
             Self::BadDeclaration => write!(f, "Bad declaration"),
             Self::UnexpectedEof => write!(f, "Unexpected EOF"),
         }
@@ -169,23 +38,6 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-impl AstExp {
-    pub fn is_var(&self) -> bool {
-        matches!(self, Self::Var(_))
-    }
-
-    pub fn is_const(&self) -> bool {
-        matches!(self, AstExp::Constant(_))
-    }
-
-    pub fn get_const(&self) -> Option<u64> {
-        match self {
-            AstExp::Constant(u) => Some(*u),
-            _ => None,
-        }
-    }
-}
-
 fn expect_token(tokens: &mut Tokens, token: Token) -> Result<()> {
     tokens
         .pop_front()
@@ -193,13 +45,13 @@ fn expect_token(tokens: &mut Tokens, token: Token) -> Result<()> {
             if t == token {
                 Ok(())
             } else {
-                Err(ParseError::ExpectedButGot(token.clone(), t.clone()))
+                Err(ParseError::ExpectedButGot(token, t.clone()))
             }
         })
 }
 
 fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier> {
-    let dummy = Token::Identifier("".into());
+    let dummy = Token::Identifier(String::new());
     tokens.pop_front().map_or(
         Err(ParseError::ExpectedButGotNone(dummy.clone())),
         |t| match t {
@@ -295,6 +147,7 @@ fn token_is_binaryop(token: &Token) -> bool {
     )
 }
 
+#[allow(clippy::match_same_arms)]
 fn get_prec(token: &Token) -> u64 {
     match token {
         Token::Asterisk => 50,
@@ -413,10 +266,7 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp> {
             take_token(tokens);
             let inner_exp = parse_exp(tokens, 0)?;
             expect_token(tokens, Token::CloseParanth)?;
-            if matches!(
-                tokens.front(),
-                Some(Token::Increment) | Some(Token::Decrement)
-            ) {
+            if matches!(tokens.front(), Some(Token::Increment | Token::Decrement)) {
                 let operator = parse_unary(tokens)?;
                 let operator = prefix_to_postfix(operator);
                 Ok(AstExp::Unary(operator, Box::new(inner_exp)))
@@ -433,10 +283,7 @@ fn parse_factor(tokens: &mut Tokens) -> Result<AstExp> {
             let inner = id.clone();
             let var = AstExp::Var(inner);
             take_token(tokens);
-            if matches!(
-                tokens.front(),
-                Some(Token::Increment) | Some(Token::Decrement)
-            ) {
+            if matches!(tokens.front(), Some(Token::Increment | Token::Decrement)) {
                 let operator = parse_unary(tokens)?;
                 let operator = prefix_to_postfix(operator);
                 Ok(AstExp::Unary(operator, Box::new(var)))
@@ -452,6 +299,7 @@ fn peek_2nd(tokens: &Tokens) -> Option<Token> {
     tokens.get(1).cloned()
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn parse_optional_exp(tokens: &mut Tokens, delim: Token) -> Result<Option<AstExp>> {
     let next_token = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     if next_token == delim {
@@ -461,6 +309,7 @@ fn parse_optional_exp(tokens: &mut Tokens, delim: Token) -> Result<Option<AstExp
     }
 }
 
+#[allow(clippy::single_match_else)]
 fn parse_forinit(tokens: &mut Tokens) -> Result<AstForInit> {
     let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
@@ -476,6 +325,7 @@ fn parse_forinit(tokens: &mut Tokens) -> Result<AstForInit> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
     let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
     match next {
@@ -515,12 +365,12 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
         Token::Break => {
             take_token(tokens);
             expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Break("".into()))
+            Ok(AstStatement::Break(String::new()))
         }
         Token::Continue => {
             take_token(tokens);
             expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Continue("".into()))
+            Ok(AstStatement::Continue(String::new()))
         }
         Token::While => {
             take_token(tokens);
@@ -529,7 +379,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
             expect_token(tokens, Token::CloseParanth)?;
             let body = parse_statement(tokens).map(Box::new)?;
             Ok(AstStatement::While {
-                label: "".into(),
+                label: String::new(),
                 condition,
                 body,
             })
@@ -543,7 +393,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
             expect_token(tokens, Token::CloseParanth)?;
             expect_token(tokens, Token::Semicolon)?;
             Ok(AstStatement::DoWhile {
-                label: "".into(),
+                label: String::new(),
                 body,
                 condition,
             })
@@ -559,7 +409,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
 
             let body = parse_statement(tokens).map(Box::new)?;
             Ok(AstStatement::For {
-                label: "".into(),
+                label: String::new(),
                 init,
                 condition,
                 post,
@@ -680,13 +530,13 @@ fn parse_function(tokens: &mut Tokens) -> Result<AstFunction> {
 
     let body = parse_block(tokens)?;
 
-    if !tokens.is_empty() {
-        Err(ParseError::MoreTokensThanExpected(tokens.clone()))
-    } else {
+    if tokens.is_empty() {
         Ok(AstFunction {
             name: identifier,
             body,
         })
+    } else {
+        Err(ParseError::MoreTokensThanExpected(tokens.clone()))
     }
 }
 

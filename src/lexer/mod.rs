@@ -241,6 +241,7 @@ fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
         .map_err(|_| LexError::BadConstant(buf.clone()))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
     let mut buf = String::new();
     while !input.is_empty() && (input[0].is_ascii_alphanumeric() || input[0] == '_') {
@@ -250,6 +251,7 @@ fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
     Ok(Token::from(buf.as_ref()))
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn lex(input: String) -> Result<Tokens, LexError> {
     let mut tokens = Tokens::new();
     let mut input: Input = input.chars().collect();

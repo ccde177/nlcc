@@ -1,5 +1,5 @@
-use crate::parser::*;
 use crate::semantical_analysis::{Result, SemAnalysisError};
+use crate::ast::*;
 
 use std::collections::HashSet;
 

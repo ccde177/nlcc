@@ -1,3 +1,8 @@
+#![warn(clippy::pedantic)]
+#![allow(clippy::wildcard_imports)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::module_name_repetitions)]
+
 use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
@@ -9,7 +14,9 @@ mod lexer;
 mod parser;
 mod semantical_analysis;
 mod tacky;
+mod ast;
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -80,16 +87,16 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let asm = codegen::codegen(tacky);
+    let asm_ast = codegen::codegen(tacky);
 
     if args.codegen {
-        dbg!(asm);
+        dbg!(asm_ast);
         return Ok(());
     }
 
     let mut asm_file = args.input.clone();
     asm_file.set_extension("s");
-    fs::write(&asm_file, asm.to_string())?;
+    fs::write(&asm_file, asm_ast.to_string())?;
 
     if args.no_assemble {
         return Ok(());
