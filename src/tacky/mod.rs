@@ -302,6 +302,57 @@ fn emit_statement(
     ng: &mut NameGenerator,
 ) {
     match statement {
+        AstStatement::Switch {
+            ctrl_exp,
+            body,
+            cases,
+            label,
+        } => {
+            let v = emit_expression(instructions, ctrl_exp, ng);
+            let mut default = None;
+            let label_end = format!("break_{}", label);
+            for case in cases {
+                if let Some(value) = case.0 {
+                    let cmp_result = TValue::Var(ng.get_name());
+                    let is_equal = TInstruction::Binary(
+                        TBinaryOp::IsEqual,
+                        v.clone(),
+                        TValue::Constant(value),
+                        cmp_result.clone(),
+                    );
+                    instructions.push(is_equal);
+                    let jnz = TInstruction::JumpIfNotZero(cmp_result, case.1);
+                    instructions.push(jnz);
+                } else {
+                    default = Some(case.1)
+                }
+            }
+
+            if let Some(default) = default {
+                let jmp = TInstruction::Jump(default);
+                instructions.push(jmp);
+            }
+
+            let jmp_end = TInstruction::Jump(label_end.clone());
+            instructions.push(jmp_end);
+
+            emit_statement(*body, instructions, ng);
+
+            let tlabel_end = TInstruction::Label(label_end);
+            instructions.push(tlabel_end);
+        }
+        AstStatement::DefaultCase { statement, label } => {
+            let label = TInstruction::Label(label);
+            instructions.push(label);
+            emit_statement(*statement, instructions, ng);
+        }
+        AstStatement::Case {
+            statement, label, ..
+        } => {
+            let label = TInstruction::Label(label);
+            instructions.push(label);
+            emit_statement(*statement, instructions, ng);
+        }
         AstStatement::DoWhile {
             condition,
             body,
@@ -440,7 +491,6 @@ fn emit_statement(
             emit_expression(instructions, e, ng);
         }
         AstStatement::Null => (),
-        _ => unimplemented!()
     }
 }
 

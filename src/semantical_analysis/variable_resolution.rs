@@ -130,12 +130,9 @@ fn resolve_statement(
                 label,
             })
         }
-        AstStatement::DefaultCase{statement, label } => {
+        AstStatement::DefaultCase { statement, label } => {
             let statement = resolve_statement(*statement, vm, ng).map(Box::new)?;
-            Ok(AstStatement::DefaultCase {
-                statement,
-                label
-            })
+            Ok(AstStatement::DefaultCase { statement, label })
         }
         AstStatement::While {
             condition,

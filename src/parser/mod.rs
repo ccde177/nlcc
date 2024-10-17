@@ -71,11 +71,11 @@ pub enum AstStatement {
     Case {
         exp: AstExp,
         statement: Box<AstStatement>,
-        label: Identifier
+        label: Identifier,
     },
-    DefaultCase{
+    DefaultCase {
         statement: Box<AstStatement>,
-        label: Identifier
+        label: Identifier,
     },
     LabeledStatement(Identifier, Box<AstStatement>),
     Continue(Identifier),
@@ -181,7 +181,7 @@ impl AstExp {
     pub fn get_const(&self) -> Option<u64> {
         match self {
             AstExp::Constant(u) => Some(*u),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -484,7 +484,7 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
             let exp = parse_exp(tokens, 0)?;
             expect_token(tokens, Token::Colon)?;
             let statement = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::Case{
+            Ok(AstStatement::Case {
                 label: String::new(),
                 exp,
                 statement,
@@ -494,9 +494,9 @@ fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
             take_token(tokens);
             expect_token(tokens, Token::Colon)?;
             let statement = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::DefaultCase{
+            Ok(AstStatement::DefaultCase {
                 label: String::new(),
-                statement
+                statement,
             })
         }
         Token::Switch => {
