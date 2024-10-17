@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
     let status = Command::new("gcc")
         .arg("-E")
         .arg("-P")
-        .arg(args.input.clone())
+        .arg(&args.input)
         .arg("-o")
         .arg(&preprocessed)
         .status()?;
@@ -95,7 +95,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut out_file = args.input.clone();
+    let mut out_file = args.input;
     out_file.set_extension("");
     let status = Command::new("gcc")
         .arg(&asm_file)
