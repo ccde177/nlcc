@@ -3,11 +3,6 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::module_name_repetitions)]
 
-use clap::Parser;
-use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-
 mod codegen;
 mod emission;
 mod lexer;
@@ -15,6 +10,12 @@ mod parser;
 mod semantical_analysis;
 mod tacky;
 mod ast;
+
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+
+use clap::Parser;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Parser)]
