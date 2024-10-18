@@ -3,13 +3,13 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::module_name_repetitions)]
 
+mod ast;
 mod codegen;
 mod emission;
 mod lexer;
 mod parser;
 mod semantic_analysis;
 mod tacky;
-mod ast;
 
 use std::fs;
 use std::path::PathBuf;
@@ -35,6 +35,9 @@ struct Args {
 
     #[arg(long)]
     validate: bool,
+
+    #[arg(short = 'c')]
+    do_not_link: bool,
 
     #[arg(short = 'S')]
     no_assemble: bool,
@@ -103,16 +106,23 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // -pie is used here as a dummy value
+    let c_arg = if args.do_not_link { "-c" } else { "-pie" };
+    let out_extension = if args.do_not_link { "o" } else { "" };
     let mut out_file = args.input;
-    out_file.set_extension("");
+    out_file.set_extension(out_extension);
+
     let status = Command::new("gcc")
         .arg(&asm_file)
+        .arg(c_arg)
         .arg("-o")
         .arg(&out_file)
         .status()?;
+
     if !status.success() {
         return Err(anyhow::anyhow!("Failed to run assembler"));
     }
+
     fs::remove_file(asm_file)?;
 
     Ok(())
