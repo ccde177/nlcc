@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::module_name_repetitions)]
 
+mod args;
 mod ast;
 mod codegen;
 mod emission;
@@ -11,39 +12,10 @@ mod parser;
 mod semantic_analysis;
 mod tacky;
 
+use args::Args;
+
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
-
-use clap::Parser;
-
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(long)]
-    lex: bool,
-
-    #[arg(long)]
-    parse: bool,
-
-    #[arg(long)]
-    codegen: bool,
-
-    #[arg(long)]
-    tacky: bool,
-
-    #[arg(long)]
-    validate: bool,
-
-    #[arg(short = 'c')]
-    do_not_link: bool,
-
-    #[arg(short = 'S')]
-    no_assemble: bool,
-
-    input: PathBuf,
-}
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -107,8 +79,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     // -pie is used here as a dummy value
-    let c_arg = if args.do_not_link { "-c" } else { "-pie" };
-    let out_extension = if args.do_not_link { "o" } else { "" };
+    let c_arg = if args.no_link { "-c" } else { "-pie" };
+    let out_extension = if args.no_link { "o" } else { "" };
     let mut out_file = args.input;
     out_file.set_extension(out_extension);
 
