@@ -65,6 +65,7 @@ pub enum Token {
     Case,
     KwDefault,
     Switch,
+    Comma,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -145,6 +146,7 @@ impl TryFrom<char> for Token {
             '^' => Ok(Self::BitwiseXor),
             ':' => Ok(Self::Colon),
             '?' => Ok(Self::QuestionMark),
+            ',' => Ok(Self::Comma),
             _ => Err(LexError::UnexpectedChar(c)),
         }
     }
@@ -258,7 +260,7 @@ pub fn lex(input: String) -> Result<Tokens, LexError> {
 
     while !input.is_empty() {
         match input[0] {
-            ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' => {
+            ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' | ',' => {
                 let token = Token::try_from(input[0]).expect("Should never fail");
                 tokens.push_back(token);
                 let _ = input.pop_front();
