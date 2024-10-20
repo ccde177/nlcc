@@ -1,11 +1,13 @@
-use std::collections::VecDeque;
-use std::{error, fmt};
-
+mod cursor;
 #[cfg(test)]
 mod lexer_tests;
 
-pub type Tokens = VecDeque<Token>;
-type Input = VecDeque<char>;
+use cursor::Cursor;
+
+use std::{error, fmt};
+
+pub type Tokens = Vec<Token>;
+type Result<T> = std::result::Result<T, LexError>;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token {
@@ -71,7 +73,7 @@ pub enum Token {
 #[derive(Debug, Eq, PartialEq)]
 pub enum LexError {
     UnexpectedChar(char),
-    BadConstant(String),
+    BadMcharOperator(String),
 }
 
 impl error::Error for LexError {}
@@ -79,12 +81,13 @@ impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
-            Self::BadConstant(s) => write!(f, "Bad constant: {s}"),
+            Self::BadMcharOperator(s) => write!(f, "Bad multi-char operator: {s}"),
         }
     }
 }
 
 impl Token {
+    #[inline]
     pub fn is_compound_assign(&self) -> bool {
         matches!(
             self,
@@ -101,8 +104,51 @@ impl Token {
         )
     }
 
-    pub fn is_incdec(&self) -> bool {
-        matches!(self, Self::Increment | Self::Decrement)
+    #[inline]
+    pub fn is_unaryop(&self) -> bool {
+        matches!(
+            self,
+            Token::Tilde | Token::Hyphen | Token::LogicalNot | Token::Increment | Token::Decrement
+        )
+    }
+
+    #[inline]
+    pub fn is_binaryop(&self) -> bool {
+        matches!(
+            self,
+            Token::Plus
+                | Token::Hyphen
+                | Token::Asterisk
+                | Token::FSlash
+                | Token::Percent
+                | Token::LogicalAnd
+                | Token::LogicalOr
+                | Token::IsEqual
+                | Token::IsNotEqual
+                | Token::IsLessThan
+                | Token::IsLessThanOrEqual
+                | Token::IsGreaterThan
+                | Token::IsGreaterThanOrEqual
+                | Token::Assign
+                | Token::BitwiseAnd
+                | Token::BitwiseOr
+                | Token::BitwiseXor
+                | Token::ShiftLeft
+                | Token::ShiftRight
+                | Token::AssignAdd
+                | Token::AssignSub
+                | Token::AssignMul
+                | Token::AssignDiv
+                | Token::AssignMod
+                | Token::AssignAnd
+                | Token::AssignOr
+                | Token::AssignXor
+                | Token::AssignShl
+                | Token::AssignShr
+                | Token::Increment
+                | Token::Decrement
+                | Token::QuestionMark
+        )
     }
 
     pub fn compound_to_single(&self) -> Self {
@@ -117,14 +163,14 @@ impl Token {
             Self::AssignXor => Self::BitwiseXor,
             Self::AssignShl => Self::ShiftLeft,
             Self::AssignShr => Self::ShiftRight,
-            _ => unreachable!(),
+            _ => self.clone(),
         }
     }
 }
 
 impl TryFrom<char> for Token {
     type Error = LexError;
-    fn try_from(c: char) -> Result<Self, Self::Error> {
+    fn try_from(c: char) -> Result<Self> {
         match c {
             ';' => Ok(Self::Semicolon),
             '(' => Ok(Self::OpenParanth),
@@ -169,118 +215,135 @@ impl From<&str> for Token {
             "case" => Self::Case,
             "default" => Self::KwDefault,
             "switch" => Self::Switch,
-            _ => Self::Identifier(s.to_string()),
+            _ => Self::Identifier(s.to_owned()),
         }
     }
 }
 
-fn lex_mcharoperator(input: &mut Input) -> Result<Token, LexError> {
-    let first = input.pop_front().expect("Should never fail");
-
-    if input.is_empty() {
-        return Token::try_from(first).map_err(|_| LexError::UnexpectedChar(first));
+fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token> {
+    match (first, second, third) {
+        ('>', '>', '=') => Ok(Token::AssignShr),
+        ('<', '<', '=') => Ok(Token::AssignShl),
+        _ => Err(LexError::BadMcharOperator(format!("{first}{second}{third}"))),
     }
 
-    if input.len() > 2
-        && (matches!((first, input[0], input[1]), ('>', '>', '='))
-            || matches!((first, input[0], input[1]), ('<', '<', '=')))
-    {
-        let result = match first {
-            '<' => Token::AssignShl,
-            '>' => Token::AssignShr,
-            _ => unreachable!(),
+}
+
+fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
+    let first = cursor.take().expect("Is always Some");
+    let second = cursor.peek();
+    let eq = cursor.peek_2nd().filter(|c| *c == '=');
+
+    if eq.is_some() {
+        let second = second.expect("Is always Some");
+        let third = eq.expect("Is alwyas Some");
+        let result = lex_mcharop3(first, second, third);
+        if result.is_ok() {
+            cursor.take();
+            cursor.take();
+            return result;
+        }
+    }
+
+    if let Some(second) = second {
+        let op = match (first, second) {
+            ('-', '-') => Ok(Token::Decrement),
+            ('+', '+') => Ok(Token::Increment),
+            ('|', '|') => Ok(Token::LogicalOr),
+            ('&', '&') => Ok(Token::LogicalAnd),
+            ('=', '=') => Ok(Token::IsEqual),
+            ('!', '=') => Ok(Token::IsNotEqual),
+            ('>', '=') => Ok(Token::IsGreaterThanOrEqual),
+            ('<', '=') => Ok(Token::IsLessThanOrEqual),
+            ('<', '<') => Ok(Token::ShiftLeft),
+            ('>', '>') => Ok(Token::ShiftRight),
+            ('+', '=') => Ok(Token::AssignAdd),
+            ('-', '=') => Ok(Token::AssignSub),
+            ('*', '=') => Ok(Token::AssignMul),
+            ('/', '=') => Ok(Token::AssignDiv),
+            ('%', '=') => Ok(Token::AssignMod),
+            ('&', '=') => Ok(Token::AssignAnd),
+            ('|', '=') => Ok(Token::AssignOr),
+            ('^', '=') => Ok(Token::AssignXor),
+            _ => Err(LexError::BadMcharOperator(format!("{first}{second}"))),
         };
-        input.pop_front();
-        input.pop_front();
-        return Ok(result);
+        if op.is_ok() {
+            cursor.take();
+        }
+        return op.or(Token::try_from(first));
     }
-
-    let result = match (first, input[0]) {
-        ('-', '-') => Ok(Token::Decrement),
-        ('+', '+') => Ok(Token::Increment),
-        ('|', '|') => Ok(Token::LogicalOr),
-        ('&', '&') => Ok(Token::LogicalAnd),
-        ('=', '=') => Ok(Token::IsEqual),
-        ('!', '=') => Ok(Token::IsNotEqual),
-        ('>', '=') => Ok(Token::IsGreaterThanOrEqual),
-        ('<', '=') => Ok(Token::IsLessThanOrEqual),
-        ('<', '<') => Ok(Token::ShiftLeft),
-        ('>', '>') => Ok(Token::ShiftRight),
-        ('+', '=') => Ok(Token::AssignAdd),
-        ('-', '=') => Ok(Token::AssignSub),
-        ('*', '=') => Ok(Token::AssignMul),
-        ('/', '=') => Ok(Token::AssignDiv),
-        ('%', '=') => Ok(Token::AssignMod),
-        ('&', '=') => Ok(Token::AssignAnd),
-        ('|', '=') => Ok(Token::AssignOr),
-        ('^', '=') => Ok(Token::AssignXor),
-        _ => Err(LexError::UnexpectedChar(first)),
-    };
-
-    if result.is_ok() {
-        input.pop_front();
-    }
-
-    result.or(Token::try_from(first))
+    Token::try_from(first)
 }
 
-fn lex_constant(input: &mut Input) -> Result<Token, LexError> {
-    let mut buf = String::new();
-    while !input.is_empty() && input[0].is_ascii_digit() {
-        let digit = input.pop_front().expect("Should never fail");
-        buf.push(digit);
+fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
+    let start = cursor.as_str();
+    let mut count = 0;
+    while let Some(c) = cursor.peek() {
+        if !c.is_ascii_digit() {
+            break;
+        }
+        count += 1;
+        cursor.take();
     }
 
-    if !input.is_empty() {
-        match input[0] {
-            'a'..='z' | 'A'..='Z' | '_' => return Err(LexError::UnexpectedChar(input[0])),
-            _ => (),
+    if let Some(next) = cursor.peek() {
+        if next.is_alphabetic() || next == '_' {
+            return Err(LexError::UnexpectedChar(next))
         }
     }
 
-    buf.parse()
+    let constant = start[..count]
+        .parse::<u64>()
         .map(Token::Constant)
-        .map_err(|_| LexError::BadConstant(buf.clone()))
+        .expect("Should never fail");
+
+    Ok(constant)
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn lex_identifier(input: &mut Input) -> Result<Token, LexError> {
-    let mut buf = String::new();
-    while !input.is_empty() && (input[0].is_ascii_alphanumeric() || input[0] == '_') {
-        let c = input.pop_front().expect("Should never fail");
-        buf.push(c);
+fn lex_identifier(cursor: &mut Cursor) -> Token {
+    let start = cursor.as_str();
+    let mut count = 0;
+
+    while let Some(c) = cursor.peek() {
+        if !(c.is_ascii_alphanumeric() || c == '_') {
+            break;
+        }
+        cursor.take();
+        count += 1;
     }
-    Ok(Token::from(buf.as_ref()))
+
+    Token::from(&start[..count])
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn lex(input: String) -> Result<Tokens, LexError> {
-    let mut tokens = Tokens::new();
-    let mut input: Input = input.chars().collect();
+pub fn lex(input: &str) -> Result<Tokens> {
+    let mut tokens = Tokens::with_capacity(input.len());
+    let mut cursor = Cursor::new(input);
 
-    while !input.is_empty() {
-        match input[0] {
+    while let Some(next) = cursor.peek() {
+        match next {
+            // Should be at the top because it is faster that way(~17%). Benched with criterion.
+            c if c.is_whitespace() => {
+                cursor.take();
+            }
             ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' | ',' => {
-                let token = Token::try_from(input[0]).expect("Should never fail");
-                tokens.push_back(token);
-                let _ = input.pop_front();
+                let token = Token::try_from(next).expect("Should never fail");
+                tokens.push(token);
+                cursor.take();
             }
             '%' | '^' | '/' | '*' | '-' | '+' | '=' | '!' | '>' | '<' | '|' | '&' => {
-                let token = lex_mcharoperator(&mut input)?;
-                tokens.push_back(token);
+                let token = lex_mcharoperator(&mut cursor)?;
+                tokens.push(token);
             }
             '_' | 'a'..='z' | 'A'..='Z' => {
-                let token = lex_identifier(&mut input)?;
-                tokens.push_back(token);
+                let token = lex_identifier(&mut cursor);
+                tokens.push(token);
             }
             '0'..='9' => {
-                let token = lex_constant(&mut input)?;
-                tokens.push_back(token);
+                let token = lex_constant(&mut cursor)?;
+                tokens.push(token);
             }
-            c if c.is_whitespace() => {
-                input.pop_front();
-            }
-            _ => return Err(LexError::UnexpectedChar(input[0])),
+            _ => return Err(LexError::UnexpectedChar(next)),
         }
     }
     Ok(tokens)

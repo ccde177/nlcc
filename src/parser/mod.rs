@@ -1,151 +1,45 @@
-use crate::lexer::{Token, Tokens};
-use crate::ast::*;
-
-use std::fmt;
-
+mod cursor;
 #[cfg(test)]
 mod parser_tests;
 
-pub type Result<T> = std::result::Result<T, ParseError>;
-pub type Identifier = String;
+use crate::ast::*;
+use crate::lexer::Token;
+use cursor::Cursor;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+use std::fmt::{Display, Formatter};
+
+pub type Result<T> = std::result::Result<T, ParseError>;
+#[derive(Debug, Eq, PartialEq)]
 pub enum ParseError {
     ExpectedButGot(Token, Token),
-    ExpectedButGotNone(Token),
-    MoreTokensThanExpected(Tokens),
-    BadExpression(Token),
-    ExpectedExpression,
-    BadDeclaration,
+    ExpectedIdentifierButGot(Token),
+    UnexpectedToken(Token),
+    BadFactor(Token),
+    BadUnaryOp(Token),
+    TrailingComma,
     UnexpectedEof,
 }
 
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        use ParseError as PE;
         match self {
-            Self::ExpectedButGot(t1, t2) => {
-                write!(f, "Expected token of type {t1:?} but got {t2:?}")
+            PE::ExpectedButGot(expected, got) => {
+                write!(f, "Expected token {expected:?}, but got {got:?}")
             }
-            Self::ExpectedButGotNone(t) => write!(f, "Expected token of type {t:?} but got None"),
-            Self::MoreTokensThanExpected(ts) => write!(f, "Trailing tokens: {ts:?}"),
-            Self::ExpectedExpression => write!(f, "Expected expression"),
-            Self::BadExpression(t) => write!(f, "Bad expression starting with {t:?}"),
-            Self::BadDeclaration => write!(f, "Bad declaration"),
-            Self::UnexpectedEof => write!(f, "Unexpected EOF"),
+            PE::ExpectedIdentifierButGot(token) => {
+                write!(f, "Expected identifier, but got {token:?}")
+            }
+            PE::UnexpectedToken(t) => write!(f, "Unexpected token {t:?}"),
+            PE::BadFactor(t) => write!(f, "Bad factor {t:?}"),
+            PE::BadUnaryOp(t) => write!(f, "Bad unary operator {t:?}"),
+            PE::UnexpectedEof => write!(f, "Reached unexpected EOF"),
+            PE::TrailingComma => write!(f, "Trailing comman in parameter list"),
         }
     }
 }
 
 impl std::error::Error for ParseError {}
-
-fn expect_token(tokens: &mut Tokens, token: Token) -> Result<()> {
-    tokens
-        .pop_front()
-        .map_or(Err(ParseError::ExpectedButGotNone(token.clone())), |t| {
-            if t == token {
-                Ok(())
-            } else {
-                Err(ParseError::ExpectedButGot(token, t.clone()))
-            }
-        })
-}
-
-fn expect_identifier(tokens: &mut Tokens) -> Result<Identifier> {
-    let dummy = Token::Identifier(String::new());
-    tokens.pop_front().map_or(
-        Err(ParseError::ExpectedButGotNone(dummy.clone())),
-        |t| match t {
-            Token::Identifier(i) => Ok(i),
-            _ => Err(ParseError::ExpectedButGot(dummy.clone(), t.clone())),
-        },
-    )
-}
-
-fn parse_unary(tokens: &mut Tokens) -> Result<AstUnaryOp> {
-    if let Some(token) = take_token(tokens) {
-        match token {
-            Token::Hyphen => Ok(AstUnaryOp::Negate),
-            Token::Tilde => Ok(AstUnaryOp::Complement),
-            Token::LogicalNot => Ok(AstUnaryOp::LogicalNot),
-            Token::Increment => Ok(AstUnaryOp::PrefixIncrement),
-            Token::Decrement => Ok(AstUnaryOp::PrefixDecrement),
-            _ => Err(ParseError::ExpectedButGot(Token::Hyphen, token)),
-        }
-    } else {
-        Err(ParseError::ExpectedButGotNone(Token::Hyphen))
-    }
-}
-
-fn take_token(tokens: &mut Tokens) -> Option<Token> {
-    tokens.pop_front()
-}
-
-fn parse_binop(tokens: &mut Tokens) -> Result<AstBinaryOp> {
-    if tokens.is_empty() {
-        return Err(ParseError::ExpectedExpression);
-    }
-    let next_token = take_token(tokens).expect("Should never fail");
-
-    match next_token {
-        Token::Plus => Ok(AstBinaryOp::Add),
-        Token::Hyphen => Ok(AstBinaryOp::Substract),
-        Token::FSlash => Ok(AstBinaryOp::Div),
-        Token::Percent => Ok(AstBinaryOp::Mod),
-        Token::Asterisk => Ok(AstBinaryOp::Multiply),
-        Token::LogicalAnd => Ok(AstBinaryOp::LogicalAnd),
-        Token::LogicalOr => Ok(AstBinaryOp::LogicalOr),
-        Token::IsEqual => Ok(AstBinaryOp::IsEqual),
-        Token::IsNotEqual => Ok(AstBinaryOp::IsNotEqual),
-        Token::IsLessThan => Ok(AstBinaryOp::LessThan),
-        Token::IsLessThanOrEqual => Ok(AstBinaryOp::LessOrEqual),
-        Token::IsGreaterThan => Ok(AstBinaryOp::GreaterThan),
-        Token::IsGreaterThanOrEqual => Ok(AstBinaryOp::GreaterOrEqual),
-        Token::BitwiseAnd => Ok(AstBinaryOp::BitwiseAnd),
-        Token::BitwiseOr => Ok(AstBinaryOp::BitwiseOr),
-        Token::BitwiseXor => Ok(AstBinaryOp::BitwiseXor),
-        Token::ShiftLeft => Ok(AstBinaryOp::ShiftLeft),
-        Token::ShiftRight => Ok(AstBinaryOp::ShiftRight),
-        _ => Err(ParseError::BadExpression(next_token.clone())),
-    }
-}
-
-fn token_is_binaryop(token: &Token) -> bool {
-    matches!(
-        token,
-        Token::Plus
-            | Token::Hyphen
-            | Token::Asterisk
-            | Token::FSlash
-            | Token::Percent
-            | Token::LogicalAnd
-            | Token::LogicalOr
-            | Token::IsEqual
-            | Token::IsNotEqual
-            | Token::IsLessThan
-            | Token::IsLessThanOrEqual
-            | Token::IsGreaterThan
-            | Token::IsGreaterThanOrEqual
-            | Token::Assign
-            | Token::BitwiseAnd
-            | Token::BitwiseOr
-            | Token::BitwiseXor
-            | Token::ShiftLeft
-            | Token::ShiftRight
-            | Token::AssignAdd
-            | Token::AssignSub
-            | Token::AssignMul
-            | Token::AssignDiv
-            | Token::AssignMod
-            | Token::AssignAnd
-            | Token::AssignOr
-            | Token::AssignXor
-            | Token::AssignShl
-            | Token::AssignShr
-            | Token::Increment
-            | Token::Decrement
-            | Token::QuestionMark
-    )
-}
 
 #[allow(clippy::match_same_arms)]
 fn get_prec(token: &Token) -> u64 {
@@ -185,365 +79,548 @@ fn get_prec(token: &Token) -> u64 {
     }
 }
 
-fn parse_conditional_middle(tokens: &mut Tokens) -> Result<AstExp> {
-    let t = take_token(tokens).ok_or(ParseError::UnexpectedEof)?;
-    if t != Token::QuestionMark {
-        return Err(ParseError::ExpectedButGot(Token::QuestionMark, t));
+fn parse_identifier(cursor: &mut Cursor) -> Result<Identifier> {
+    let next = cursor.next_or_error()?;
+    if let Token::Identifier(name) = next {
+        Ok(name.to_owned())
+    } else {
+        Err(ParseError::ExpectedIdentifierButGot(next.clone()))
     }
-    let inner = parse_exp(tokens, 0)?;
-    expect_token(tokens, Token::Colon)?;
-    Ok(inner)
 }
 
-fn parse_exp(tokens: &mut Tokens, min_prec: u64) -> Result<AstExp> {
-    let mut left = parse_factor(tokens)?;
-    while !tokens.is_empty() {
-        let next_token = tokens.front().expect("Should never fail").clone();
-        let prec = get_prec(&next_token);
-        if !(token_is_binaryop(&next_token) && prec >= min_prec) {
-            break;
-        }
+fn parse_parameter(cursor: &mut Cursor) -> Result<Identifier> {
+    cursor.expect(&Token::Int)?;
+    let name = parse_identifier(cursor)?;
+    Ok(name)
+}
 
-        if next_token == Token::QuestionMark {
-            let middle = parse_conditional_middle(tokens)?;
-            let right = parse_exp(tokens, prec)?;
-            left = AstExp::Conditional {
-                condition: Box::new(left),
-                then: Box::new(middle),
-                els: Box::new(right),
-            };
-        } else if next_token.is_incdec() {
-            take_token(tokens);
-            let op = if matches!(next_token, Token::Increment) {
-                AstUnaryOp::PostfixIncrement
-            } else {
-                AstUnaryOp::PostfixDecrement
-            };
-            left = AstExp::Unary(op, Box::new(left));
-        } else if next_token.is_compound_assign() {
-            let comp_op = take_token(tokens).expect("Should never fail");
-            let op = comp_op.compound_to_single();
-            let right = parse_exp(tokens, prec)?;
-            tokens.push_front(op);
-            let op = parse_binop(tokens)?;
-            let operation = AstExp::Binary(op, Box::new(left.clone()), Box::new(right));
-            left = AstExp::Assignment(Box::new(left), Box::new(operation));
-        } else if next_token == Token::Assign {
-            take_token(tokens);
-            let right = parse_exp(tokens, prec)?;
-            left = AstExp::Assignment(Box::new(left), Box::new(right));
-        } else {
-            let operator = parse_binop(tokens)?;
-            let right = parse_exp(tokens, prec + 1)?;
+fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
+    let mut params = Vec::new();
 
-            left = AstExp::Binary(operator, Box::new(left), Box::new(right));
+    let void = cursor.bump_if(&Token::Void);
+
+    if void {
+        return Ok(params);
+    }
+
+    let mut expect_more = false;
+    while let Token::Int = cursor.peek_or_error()? {
+        let parameter = parse_parameter(cursor)?;
+        params.push(parameter);
+        expect_more = cursor.bump_if(&Token::Comma);
+    }
+
+    if expect_more {
+        return Err(ParseError::TrailingComma);
+    }
+
+    Ok(params)
+}
+
+fn parse_vardec(cursor: &mut Cursor) -> Result<VarDec> {
+    cursor.expect(&Token::Int)?;
+    let name = parse_identifier(cursor)?;
+    let assign = cursor.bump_if(&Token::Assign);
+    let init = assign.then(|| parse_exp(cursor, 0)).transpose()?;
+    cursor.expect(&Token::Semicolon)?;
+
+    Ok(VarDec { name, init })
+}
+
+fn parse_conditional_middle(cursor: &mut Cursor) -> Result<Exp> {
+    cursor.expect(&Token::QuestionMark)?;
+    let exp = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::Colon)?;
+    Ok(exp)
+}
+
+impl TryFrom<&Token> for AstBinaryOp {
+    type Error = ParseError;
+    fn try_from(value: &Token) -> Result<Self> {
+        match value {
+            Token::Plus => Ok(AstBinaryOp::Add),
+            Token::Hyphen => Ok(AstBinaryOp::Substract),
+            Token::FSlash => Ok(AstBinaryOp::Div),
+            Token::Percent => Ok(AstBinaryOp::Mod),
+            Token::Asterisk => Ok(AstBinaryOp::Multiply),
+            Token::LogicalAnd => Ok(AstBinaryOp::LogicalAnd),
+            Token::LogicalOr => Ok(AstBinaryOp::LogicalOr),
+            Token::IsEqual => Ok(AstBinaryOp::IsEqual),
+            Token::IsNotEqual => Ok(AstBinaryOp::IsNotEqual),
+            Token::IsLessThan => Ok(AstBinaryOp::LessThan),
+            Token::IsLessThanOrEqual => Ok(AstBinaryOp::LessOrEqual),
+            Token::IsGreaterThan => Ok(AstBinaryOp::GreaterThan),
+            Token::IsGreaterThanOrEqual => Ok(AstBinaryOp::GreaterOrEqual),
+            Token::BitwiseAnd => Ok(AstBinaryOp::BitwiseAnd),
+            Token::BitwiseOr => Ok(AstBinaryOp::BitwiseOr),
+            Token::BitwiseXor => Ok(AstBinaryOp::BitwiseXor),
+            Token::ShiftLeft => Ok(AstBinaryOp::ShiftLeft),
+            Token::ShiftRight => Ok(AstBinaryOp::ShiftRight),
+            _ => Err(ParseError::UnexpectedToken(value.clone())),
         }
     }
+}
+
+fn parse_exp_conditional(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
+    let then = parse_conditional_middle(cursor).map(Box::new)?;
+    let els = parse_exp(cursor, prec).map(Box::new)?;
+    let conditional = ConditionalExp {
+        condition: Box::new(left),
+        then,
+        els
+    };
+    
+    Ok(Exp::Conditional(conditional))
+}
+
+fn parse_exp_compassign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
+    let t = cursor.next_or_error()?;
+    if !t.is_compound_assign() {
+        return Err(ParseError::UnexpectedToken(t.clone()));
+    }
+    let op = t.compound_to_single();
+    let op = AstBinaryOp::try_from(&op)?;
+    let right = parse_exp(cursor, prec).map(Box::new)?;
+    let operation = Exp::Binary(op, Box::new(left.clone()), right);
+    Ok(Exp::Assignment(Box::new(left), Box::new(operation)))
+}
+
+fn parse_exp_assign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
+    cursor.expect(&Token::Assign)?;
+    let right = parse_exp(cursor, prec).map(Box::new)?;
+    let left = Box::new(left);
+    Ok(Exp::Assignment(left, right))
+}
+
+fn parse_exp_postfixop(cursor: &mut Cursor, _prec: u64, left: Exp) -> Result<Exp> {
+    let op = parse_postfixop(cursor)?;
+    let left = Box::new(left);
+    Ok(Exp::Unary(op, left))
+}
+
+fn parse_binary_op(cursor: &mut Cursor) -> Result<AstBinaryOp> {
+    let next = cursor.next_or_error()?;
+    AstBinaryOp::try_from(next)
+}
+
+fn parse_exp_binary(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
+    let op = parse_binary_op(cursor)?;
+    let right = parse_exp(cursor, prec + 1).map(Box::new)?;
+    Ok(Exp::Binary(op, Box::new(left), right))
+}
+
+fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
+    let mut left = parse_factor(cursor)?;
+    
+    while let Some(next_token) = cursor.peek() {
+        let prec = get_prec(next_token);
+        if !next_token.is_binaryop() || prec < min_prec {
+            break;
+        }
+        match next_token {
+            t if t.is_compound_assign() => {
+                left = parse_exp_compassign(cursor, prec, left)?;
+            }
+            Token::QuestionMark => {
+                left = parse_exp_conditional(cursor, prec, left)?;
+            }
+            Token::Assign => {
+                left = parse_exp_assign(cursor, prec, left)?;
+            }
+            Token::Increment | Token::Decrement => {
+                left = parse_exp_postfixop(cursor, prec, left)?;
+            }
+            _ => {
+                left = parse_exp_binary(cursor, prec, left)?;
+            }
+        }
+    }
+    
     Ok(left)
 }
 
-fn prefix_to_postfix(op: AstUnaryOp) -> AstUnaryOp {
-    match op {
-        AstUnaryOp::PrefixIncrement => AstUnaryOp::PostfixIncrement,
-        AstUnaryOp::PrefixDecrement => AstUnaryOp::PostfixDecrement,
-        _ => op,
-    }
-}
-
-fn parse_factor(tokens: &mut Tokens) -> Result<AstExp> {
-    if tokens.is_empty() {
-        return Err(ParseError::ExpectedExpression);
-    }
-    let next_token = tokens.front().expect("Should never fail");
-
-    match next_token {
-        Token::Tilde | Token::Hyphen | Token::LogicalNot | Token::Increment | Token::Decrement => {
-            let operator = parse_unary(tokens)?;
-            let inner_exp = Box::new(parse_factor(tokens)?);
-            Ok(AstExp::Unary(operator, inner_exp))
+fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
+    let third = cursor.peek_nth_or_error(2)?;
+    match third {
+        Token::Semicolon | Token::Assign => {
+            let vardec = parse_vardec(cursor)?;
+            Ok(Declaration::Var(vardec))
         }
         Token::OpenParanth => {
-            take_token(tokens);
-            let inner_exp = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::CloseParanth)?;
-            if matches!(tokens.front(), Some(Token::Increment | Token::Decrement)) {
-                let operator = parse_unary(tokens)?;
-                let operator = prefix_to_postfix(operator);
-                Ok(AstExp::Unary(operator, Box::new(inner_exp)))
-            } else {
-                Ok(inner_exp)
-            }
+            let fundec = parse_fundec(cursor)?;
+            Ok(Declaration::Fun(fundec))
         }
-        Token::Constant(i) => {
-            let inner = *i;
-            take_token(tokens);
-            Ok(AstExp::Constant(inner))
-        }
-        Token::Identifier(id) => {
-            let inner = id.clone();
-            let var = AstExp::Var(inner);
-            take_token(tokens);
-            if matches!(tokens.front(), Some(Token::Increment | Token::Decrement)) {
-                let operator = parse_unary(tokens)?;
-                let operator = prefix_to_postfix(operator);
-                Ok(AstExp::Unary(operator, Box::new(var)))
-            } else {
-                Ok(var)
-            }
-        }
-        _ => Err(ParseError::BadExpression(next_token.clone())),
-    }
-}
-
-fn peek_2nd(tokens: &Tokens) -> Option<Token> {
-    tokens.get(1).cloned()
-}
-
-#[allow(clippy::needless_pass_by_value)]
-fn parse_optional_exp(tokens: &mut Tokens, delim: Token) -> Result<Option<AstExp>> {
-    let next_token = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
-    if next_token == delim {
-        Ok(None)
-    } else {
-        parse_exp(tokens, 0).map(Some)
+        _ => Err(ParseError::UnexpectedToken(third.clone())),
     }
 }
 
 #[allow(clippy::single_match_else)]
-fn parse_forinit(tokens: &mut Tokens) -> Result<AstForInit> {
-    let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
+fn parse_forinit(cursor: &mut Cursor) -> Result<AstForInit> {
+    let next = cursor.peek_or_error()?;
     match next {
         Token::Int => {
-            let declaration = parse_declaration(tokens)?;
-            Ok(AstForInit::InitDecl(declaration))
+            let vardec = parse_vardec(cursor)?;
+            Ok(AstForInit::InitDecl(vardec))
         }
         _ => {
-            let exp = parse_optional_exp(tokens, Token::Semicolon)?;
-            expect_token(tokens, Token::Semicolon)?;
+            let exp = parse_optional_exp(cursor, &Token::Semicolon)?;
             Ok(AstForInit::InitExp(exp))
         }
     }
 }
 
-#[allow(clippy::too_many_lines)]
-fn parse_statement(tokens: &mut Tokens) -> Result<AstStatement> {
-    let next = peek(tokens).ok_or(ParseError::UnexpectedEof)?;
-    match next {
-        Token::Case => {
-            take_token(tokens);
-            let exp = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::Colon)?;
-            let statement = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::Case {
-                label: String::new(),
-                exp,
-                statement,
-            })
-        }
-        Token::KwDefault => {
-            take_token(tokens);
-            expect_token(tokens, Token::Colon)?;
-            let statement = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::DefaultCase {
-                label: String::new(),
-                statement,
-            })
-        }
-        Token::Switch => {
-            take_token(tokens);
-            expect_token(tokens, Token::OpenParanth)?;
-            let ctrl_exp = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::CloseParanth)?;
-            let body = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::Switch {
-                cases: vec![],
-                label: String::new(),
-                ctrl_exp,
-                body,
-            })
-        }
-        Token::Break => {
-            take_token(tokens);
-            expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Break(String::new()))
-        }
-        Token::Continue => {
-            take_token(tokens);
-            expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Continue(String::new()))
-        }
-        Token::While => {
-            take_token(tokens);
-            expect_token(tokens, Token::OpenParanth)?;
-            let condition = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::CloseParanth)?;
-            let body = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::While {
-                label: String::new(),
-                condition,
-                body,
-            })
-        }
-        Token::Do => {
-            take_token(tokens);
-            let body = parse_statement(tokens).map(Box::new)?;
-            expect_token(tokens, Token::While)?;
-            expect_token(tokens, Token::OpenParanth)?;
-            let condition = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::CloseParanth)?;
-            expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::DoWhile {
-                label: String::new(),
-                body,
-                condition,
-            })
-        }
-        Token::For => {
-            take_token(tokens);
-            expect_token(tokens, Token::OpenParanth)?;
-            let init = parse_forinit(tokens)?;
-            let condition = parse_optional_exp(tokens, Token::Semicolon)?;
-            expect_token(tokens, Token::Semicolon)?;
-            let post = parse_optional_exp(tokens, Token::CloseParanth)?;
-            expect_token(tokens, Token::CloseParanth)?;
+fn parse_optional_exp(cursor: &mut Cursor, delim: &Token) -> Result<Option<Exp>> {
+    let not_met_delim = !cursor.bump_if(delim);
+    let exp = not_met_delim.then(|| parse_exp(cursor, 0)).transpose()?;
 
-            let body = parse_statement(tokens).map(Box::new)?;
-            Ok(AstStatement::For {
-                label: String::new(),
-                init,
-                condition,
-                post,
-                body,
-            })
-        }
-        Token::If => {
-            take_token(tokens);
-            expect_token(tokens, Token::OpenParanth)?;
-            let exp = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::CloseParanth)?;
-            let then = parse_statement(tokens)?;
-            let mut els = None;
-            if peek(tokens).filter(|t| *t == Token::Else).is_some() {
-                take_token(tokens);
-                els = Some(Box::new(parse_statement(tokens)?));
-            }
-
-            Ok(AstStatement::If {
-                condition: exp,
-                then: Box::new(then),
-                els,
-            })
-        }
-        Token::OpenCurly => {
-            let block = parse_block(tokens)?;
-            Ok(AstStatement::Compound(block))
-        }
-        Token::Identifier(id) => {
-            if let Some(Token::Colon) = peek_2nd(tokens) {
-                take_token(tokens);
-                expect_token(tokens, Token::Colon)?;
-                let statement = parse_statement(tokens).map(Box::new)?;
-                Ok(AstStatement::LabeledStatement(id, statement))
-            } else {
-                let exp = parse_exp(tokens, 0)?;
-                expect_token(tokens, Token::Semicolon)?;
-                Ok(AstStatement::Exp(exp))
-            }
-        }
-        Token::Goto => {
-            take_token(tokens);
-            let label = expect_identifier(tokens)?;
-            expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Goto(label))
-        }
-        Token::Return => {
-            take_token(tokens);
-            let exp = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Return(exp))
-        }
-        Token::Semicolon => {
-            take_token(tokens);
-            Ok(AstStatement::Null)
-        }
-        _ => {
-            let exp = parse_exp(tokens, 0)?;
-            expect_token(tokens, Token::Semicolon)?;
-            Ok(AstStatement::Exp(exp))
-        }
+    if not_met_delim {
+        cursor.expect(delim)?;
     }
+
+    Ok(exp)
 }
 
-fn parse_declaration(tokens: &mut Tokens) -> Result<AstDeclaration> {
-    expect_token(tokens, Token::Int)?;
-    let id = expect_identifier(tokens)?;
-    let exp = match peek(tokens) {
-        Some(Token::Assign) => {
-            take_token(tokens);
-            let exp = parse_exp(tokens, get_prec(&Token::Assign))?;
-            Some(exp)
-        }
-        Some(Token::Semicolon) => None,
-        _ => return Err(ParseError::BadDeclaration),
+fn parse_for(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::For)?;
+    cursor.expect(&Token::OpenParanth)?;
+    let init = parse_forinit(cursor)?;
+    let condition = parse_optional_exp(cursor, &Token::Semicolon)?;
+    let post = parse_optional_exp(cursor, &Token::CloseParanth)?;
+    let body = parse_statement(cursor).map(Box::new)?;
+    let label = String::new();
+    let for_st = For {
+        init,
+        condition,
+        post,
+        body,
+        label,
     };
 
-    expect_token(tokens, Token::Semicolon)?;
-
-    Ok(AstDeclaration {
-        name: id,
-        init: exp,
-    })
+    Ok(Statement::For(for_st))
 }
 
-fn parse_block_item(tokens: &mut Tokens) -> Result<AstBlockItem> {
-    match peek(tokens) {
-        Some(Token::Int) => Ok(AstBlockItem::D(parse_declaration(tokens)?)),
-        Some(_) => Ok(AstBlockItem::S(parse_statement(tokens)?)),
-        None => Err(ParseError::UnexpectedEof),
+fn parse_if(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::If)?;
+    cursor.expect(&Token::OpenParanth)?;
+    let condition = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::CloseParanth)?;
+    let then = parse_statement(cursor).map(Box::new)?;
+    let else_present = cursor.bump_if(&Token::Else);
+    let els = else_present
+        .then(|| parse_statement(cursor))
+        .transpose()?
+        .map(Box::new);
+    let if_st = If {
+        condition,
+        then,
+        els,
+    };
+    
+    Ok(Statement::If(if_st))
+}
+
+fn parse_while(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::While)?;
+    cursor.expect(&Token::OpenParanth)?;
+    let condition = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::CloseParanth)?;
+    let body = parse_statement(cursor).map(Box::new)?;
+    let label = String::new();
+    let while_st = While {
+        condition,
+        body,
+        label,
+    };
+    
+    Ok(Statement::While(while_st))
+}
+
+fn parse_dowhile(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Do)?;
+    let body = parse_statement(cursor).map(Box::new)?;
+    cursor.expect(&Token::While)?;
+    cursor.expect(&Token::OpenParanth)?;
+    let condition = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::CloseParanth)?;
+    cursor.expect(&Token::Semicolon)?;
+    let label = String::new();
+    let dowhile = DoWhile {
+        body,
+        condition,
+        label
+    };
+    
+    Ok(Statement::DoWhile(dowhile))
+}
+
+fn parse_continue(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Continue)?;
+    cursor.expect(&Token::Semicolon)?;
+    let label = String::new();
+    Ok(Statement::Continue(label))
+}
+
+fn parse_break(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Break)?;
+    cursor.expect(&Token::Semicolon)?;
+    let label = String::new();
+    Ok(Statement::Break(label))
+}
+
+fn parse_return(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Return)?;
+    let exp = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::Semicolon)?;
+    Ok(Statement::Return(exp))
+}
+
+fn parse_switch(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Switch)?;
+    cursor.expect(&Token::OpenParanth)?;
+    let ctrl_exp = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::CloseParanth)?;
+    let body = parse_statement(cursor).map(Box::new)?;
+    let cases = Vec::new();
+    let label = String::new();
+    let switch = Switch {
+        ctrl_exp,
+        body,
+        cases,
+        label,
+    };
+    
+    Ok(Statement::Switch(switch))
+}
+
+fn parse_case(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Case)?;
+    let exp = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::Colon)?;
+    let body = parse_statement(cursor).map(Box::new)?;
+    let label = String::new();
+    let cased_statement = CasedStatement {
+        exp,
+        body,
+        label
+    };
+    
+    Ok(Statement::CasedStatement(cased_statement))
+}
+
+fn parse_default_case(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::KwDefault)?;
+    cursor.expect(&Token::Colon)?;
+    let body = parse_statement(cursor).map(Box::new)?;
+    let label = String::new();
+    let dcs = DCasedStatement {
+        body,
+        label,
+    };
+    
+    Ok(Statement::DCasedStatement(dcs))
+}
+
+fn parse_goto(cursor: &mut Cursor) -> Result<Statement> {
+    cursor.expect(&Token::Goto)?;
+    let label = parse_identifier(cursor)?;
+    cursor.expect(&Token::Semicolon)?;
+
+    Ok(Statement::Goto(label))
+}
+
+fn parse_labeled_statement(cursor: &mut Cursor) -> Result<Statement> {
+    let name = parse_identifier(cursor)?;
+    cursor.expect(&Token::Colon)?;
+    let statement = parse_statement(cursor).map(Box::new)?;
+
+    Ok(Statement::Labeled(name, statement))
+}
+
+fn parse_statement_exp(cursor: &mut Cursor) -> Result<Statement> {
+    let exp = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::Semicolon)?;
+
+    Ok(Statement::Exp(exp))
+}
+
+fn parse_statement_label_or_exp(cursor: &mut Cursor) -> Result<Statement> {
+    let second = cursor.peek_nth_or_error(1)?;
+    if let Token::Colon = second {
+        parse_labeled_statement(cursor)
+    } else {
+        parse_statement_exp(cursor)
     }
 }
 
-fn peek(tokens: &Tokens) -> Option<Token> {
-    tokens.front().cloned()
+impl TryFrom<&Token> for AstUnaryOp {
+    type Error = ParseError;
+    fn try_from(value: &Token) -> Result<Self> {
+        match value {
+            Token::Hyphen => Ok(Self::Negate),
+            Token::Tilde => Ok(Self::Complement),
+            Token::LogicalNot => Ok(Self::LogicalNot),
+            Token::Increment => Ok(Self::PrefixIncrement),
+            Token::Decrement => Ok(Self::PrefixDecrement),
+            _ => Err(ParseError::BadUnaryOp(value.clone())),
+        }
+    }
 }
 
-fn parse_block(tokens: &mut Tokens) -> Result<AstBlock> {
-    let mut items = AstBlockItems::new();
-    expect_token(tokens, Token::OpenCurly)?;
+fn parse_unary_operation(cursor: &mut Cursor) -> Result<Exp> {
+    let next = cursor.next_or_error()?;
+    let op = AstUnaryOp::try_from(next)?;
+    let inner = parse_factor(cursor).map(Box::new)?;
 
-    while !tokens.is_empty() && !matches!(peek(tokens), Some(Token::CloseCurly)) {
-        let next_block_item = parse_block_item(tokens)?;
-        items.push(next_block_item);
+    Ok(Exp::Unary(op, inner))
+}
+
+fn parse_arguments(cursor: &mut Cursor) -> Result<Vec<Exp>> {
+    let mut args = Vec::new();
+
+    while cursor.peek_or_error()? != &Token::CloseParanth {
+        let comma = cursor.bump_if(&Token::Comma);
+        if comma && args.is_empty() {
+            return Err(ParseError::TrailingComma);
+        }
+        let exp = parse_exp(cursor, 0)?;
+        args.push(exp);
     }
 
-    expect_token(tokens, Token::CloseCurly)?;
+    Ok(args)
+}
+
+fn parse_factor_call(cursor: &mut Cursor, name: String) -> Result<Exp> {
+    cursor.expect(&Token::OpenParanth)?;
+    let arguments = parse_arguments(cursor)?;
+    cursor.expect(&Token::CloseParanth)?;
+    Ok(Exp::Call(name, arguments))
+}
+
+fn parse_factor_postfixop(cursor: &mut Cursor, inner: Exp) -> Result<Exp> {
+    let op = parse_postfixop(cursor)?;
+    let inner = Box::new(inner);
+    Ok(Exp::Unary(op, inner))
+}
+
+fn parse_factor_identifier(cursor: &mut Cursor) -> Result<Exp> {
+    let name = parse_identifier(cursor)?;
+    let var = Exp::Var(name.clone());
+    let peek = cursor.peek_or_error()?;
+    match peek {
+        Token::OpenParanth => parse_factor_call(cursor, name),
+        Token::Increment | Token::Decrement => parse_factor_postfixop(cursor, var),
+        _ => Ok(var),
+    }
+}
+
+fn parse_factor_subexp(cursor: &mut Cursor) -> Result<Exp> {
+    cursor.expect(&Token::OpenParanth)?;
+    let exp = parse_exp(cursor, 0)?;
+    cursor.expect(&Token::CloseParanth)?;
+
+    let peek = cursor.peek();
+    match peek {
+        Some(Token::Increment | Token::Decrement) => {
+            parse_factor_postfixop(cursor, exp)
+        }
+        _ => Ok(exp),
+    }
+}
+
+fn parse_postfixop(cursor: &mut Cursor) -> Result<AstUnaryOp> {
+    let next = cursor.next_or_error()?;
+    match next {
+        Token::Increment => Ok(AstUnaryOp::PostfixIncrement),
+        _ => Ok(AstUnaryOp::PostfixDecrement),
+    }
+}
+
+fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
+    let peek = cursor.peek_or_error()?;
+    match peek {
+        Token::Identifier(_) => parse_factor_identifier(cursor),
+        Token::OpenParanth => parse_factor_subexp(cursor),
+        Token::Constant(u) => {
+            let constant = Exp::Constant(*u);
+            cursor.bump();
+            Ok(constant)
+        }
+        t if t.is_unaryop() => parse_unary_operation(cursor),
+        _ => Err(ParseError::BadFactor(peek.clone())),
+    }
+}
+
+fn parse_statement(cursor: &mut Cursor) -> Result<Statement> {
+    let next = cursor.peek_or_error()?;
+    match next {
+        Token::Goto => parse_goto(cursor),
+        Token::Case => parse_case(cursor),
+        Token::KwDefault => parse_default_case(cursor),
+        Token::Switch => parse_switch(cursor),
+        Token::Continue => parse_continue(cursor),
+        Token::Break => parse_break(cursor),
+        Token::Return => parse_return(cursor),
+        Token::For => parse_for(cursor),
+        Token::Do => parse_dowhile(cursor),
+        Token::While => parse_while(cursor),
+        Token::If => parse_if(cursor),
+        Token::Identifier(_) => parse_statement_label_or_exp(cursor),
+        Token::Semicolon => {
+            cursor.bump();
+            Ok(Statement::Null)
+        }
+        Token::OpenCurly => {
+            let block = parse_block(cursor)?;
+            Ok(Statement::Compound(block))
+        }
+        _ => parse_statement_exp(cursor),
+    }
+}
+
+fn parse_block_item(cursor: &mut Cursor) -> Result<AstBlockItem> {
+    let next = cursor.peek_or_error()?;
+    match next {
+        Token::Int => Ok(AstBlockItem::D(parse_declaration(cursor)?)),
+        _ => Ok(AstBlockItem::S(parse_statement(cursor)?)),
+    }
+}
+
+fn parse_block(cursor: &mut Cursor) -> Result<AstBlock> {
+    let mut items = Vec::new();
+
+    cursor.expect(&Token::OpenCurly)?;
+
+    while cursor.peek_or_error()? != &Token::CloseCurly {
+        let item = parse_block_item(cursor)?;
+        items.push(item);
+    }
+
+    cursor.expect(&Token::CloseCurly)?;
 
     Ok(AstBlock { items })
 }
 
-fn parse_function(tokens: &mut Tokens) -> Result<AstFunction> {
-    expect_token(tokens, Token::Int)?;
-    let identifier = expect_identifier(tokens)?;
-    expect_token(tokens, Token::OpenParanth)?;
-    expect_token(tokens, Token::Void)?;
-    expect_token(tokens, Token::CloseParanth)?;
+fn parse_fundec(cursor: &mut Cursor) -> Result<FunDec> {
+    cursor.expect(&Token::Int)?;
+    let name = parse_identifier(cursor)?;
 
-    let body = parse_block(tokens)?;
+    cursor.expect(&Token::OpenParanth)?;
+    let params = parse_params(cursor)?;
+    cursor.expect(&Token::CloseParanth)?;
 
-    if tokens.is_empty() {
-        Ok(AstFunction {
-            name: identifier,
-            body,
-        })
-    } else {
-        Err(ParseError::MoreTokensThanExpected(tokens.clone()))
+    let semicolon = cursor.bump_if(&Token::Semicolon);
+    let body = (!semicolon).then(|| parse_block(cursor)).transpose()?;
+
+    Ok(FunDec { name, params, body })
+}
+
+pub fn parse(tokens: &[Token]) -> Result<Ast> {
+    let mut functions = Vec::new();
+    let mut cursor = Cursor::new(tokens);
+
+    while !cursor.at_end() {
+        let f = parse_fundec(&mut cursor)?;
+        functions.push(f);
     }
-}
-
-fn parse_program(tokens: &mut Tokens) -> Result<Ast> {
-    Ok(Ast::FunDef(parse_function(tokens)?))
-}
-
-pub fn parse(mut tokens: Tokens) -> Result<Ast> {
-    parse_program(&mut tokens)
+    Ok(Ast { functions })
 }

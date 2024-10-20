@@ -1,14 +1,8 @@
 pub type Identifier = String;
 
 #[derive(Debug, Clone)]
-pub enum Ast {
-    FunDef(AstFunction),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AstFunction {
-    pub name: Identifier,
-    pub body: AstBlock,
+pub struct Ast {
+    pub functions: Vec<FunDec>,
 }
 
 pub type AstBlockItems = Vec<AstBlockItem>;
@@ -20,81 +14,123 @@ pub struct AstBlock {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AstBlockItem {
-    S(AstStatement),
-    D(AstDeclaration),
+    S(Statement),
+    D(Declaration),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AstDeclaration {
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Declaration {
+    Var(VarDec),
+    Fun(FunDec),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunDec {
     pub name: Identifier,
-    pub init: Option<AstExp>,
+    pub params: Vec<Identifier>,
+    pub body: Option<AstBlock>,
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct VarDec {
+    pub name: Identifier,
+    pub init: Option<Exp>,
+}
+
+pub type Cases = Vec<(Option<u64>, Identifier)>;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DoWhile {
+    pub condition: Exp,
+    pub body: Box<Statement>,
+    pub label: Identifier,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum AstStatement {
-    While {
-        condition: AstExp,
-        body: Box<AstStatement>,
-        label: Identifier,
-    },
-    DoWhile {
-        condition: AstExp,
-        body: Box<AstStatement>,
-        label: Identifier,
-    },
-    For {
-        init: AstForInit,
-        condition: Option<AstExp>,
-        post: Option<AstExp>,
-        body: Box<AstStatement>,
-        label: Identifier,
-    },
-    If {
-        condition: AstExp,
-        then: Box<AstStatement>,
-        els: Option<Box<AstStatement>>,
-    },
-    Switch {
-        ctrl_exp: AstExp,
-        body: Box<AstStatement>,
-        cases: Vec<(Option<u64>, Identifier)>,
-        label: Identifier,
-    },
-    Case {
-        exp: AstExp,
-        statement: Box<AstStatement>,
-        label: Identifier,
-    },
-    DefaultCase {
-        statement: Box<AstStatement>,
-        label: Identifier,
-    },
-    LabeledStatement(Identifier, Box<AstStatement>),
+pub struct While  {
+    pub condition: Exp,
+    pub body: Box<Statement>,
+    pub label: Identifier,    
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct For {
+    pub init: AstForInit,
+    pub condition: Option<Exp>,
+    pub post: Option<Exp>,
+    pub body: Box<Statement>,
+    pub label: Identifier,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct If {
+    pub condition: Exp,
+    pub then: Box<Statement>,
+    pub els: Option<Box<Statement>>,    
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Switch {
+    pub ctrl_exp: Exp,
+    pub body: Box<Statement>,
+    pub cases: Cases,
+    pub label: Identifier,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CasedStatement {
+    pub exp: Exp,
+    pub body: Box<Statement>,
+    pub label: Identifier,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DCasedStatement {
+    pub body: Box<Statement>,
+    pub label: Identifier,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Statement {
+    While(While),
+    DoWhile(DoWhile),
+    For(For),
+    If(If),
+    Switch(Switch),
+    CasedStatement(CasedStatement),
+    DCasedStatement(DCasedStatement),
+    Labeled(Identifier, Box<Statement>),
     Continue(Identifier),
     Compound(AstBlock),
     Break(Identifier),
     Goto(Identifier),
-    Return(AstExp),
-    Exp(AstExp),
+    Return(Exp),
+    Exp(Exp),
     Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstForInit {
-    InitDecl(AstDeclaration),
-    InitExp(Option<AstExp>),
+    InitDecl(VarDec),
+    InitExp(Option<Exp>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AstExp {
-    Conditional {
-        condition: Box<AstExp>,
-        then: Box<AstExp>,
-        els: Box<AstExp>,
-    },
-    Binary(AstBinaryOp, Box<AstExp>, Box<AstExp>),
-    Unary(AstUnaryOp, Box<AstExp>),
-    Assignment(Box<AstExp>, Box<AstExp>),
+pub struct ConditionalExp{
+    pub condition: Box<Exp>,
+    pub then: Box<Exp>,
+    pub els: Box<Exp>    
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Exp {
+    Conditional(ConditionalExp),
+    Binary(AstBinaryOp, Box<Exp>, Box<Exp>),
+    Unary(AstUnaryOp, Box<Exp>),
+    Assignment(Box<Exp>, Box<Exp>),
+    Call(Identifier, Vec<Exp>),
     Var(Identifier),
     Constant(u64),
 }
@@ -132,18 +168,18 @@ pub enum AstUnaryOp {
     PrefixIncrement,
 }
 
-impl AstExp {
+impl Exp {
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
     }
 
     pub fn is_const(&self) -> bool {
-        matches!(self, AstExp::Constant(_))
+        matches!(self, Exp::Constant(_))
     }
 
     pub fn get_const(&self) -> Option<u64> {
         match self {
-            AstExp::Constant(u) => Some(*u),
+            Exp::Constant(u) => Some(*u),
             _ => None,
         }
     }
