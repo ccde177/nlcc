@@ -32,7 +32,6 @@ pub struct FunDec {
     pub body: Option<AstBlock>,
 }
 
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VarDec {
     pub name: Identifier,
@@ -99,8 +98,8 @@ pub enum Statement {
     For(For),
     If(If),
     Switch(Switch),
-    CasedStatement(CasedStatement),
-    DCasedStatement(DCasedStatement),
+    Cased(CasedStatement),
+    DCased(DCasedStatement),
     Labeled(Identifier, Box<Statement>),
     Continue(Identifier),
     Compound(AstBlock),
