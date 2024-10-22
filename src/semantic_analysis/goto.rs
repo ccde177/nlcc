@@ -1,112 +1,79 @@
-use crate::semantic_analysis::{Result, SemAnalysisError};
 use crate::ast::*;
-
+use crate::semantic_analysis::{Result, SemAnalysisError};
 use std::collections::HashSet;
 
 type LabelSet = HashSet<Identifier>;
 
-fn intersect_ls(ls: &LabelSet, other: &LabelSet) -> Result<LabelSet> {
-    if let Some(wrong) = ls.intersection(other).next() {
-        return Err(SemAnalysisError::LabelRedeclaration(wrong.clone()));
-    }
-    let union = ls.union(other).cloned().collect();
-    Ok(union)
-}
-
-fn collect_labels_statement(statement: &AstStatement) -> Result<LabelSet> {
-    let mut ls = LabelSet::new();
+fn collect_labels_statement(statement: &Statement, ls: &mut LabelSet) -> Result<()> {
+    use Statement as S;
     match statement {
-        AstStatement::While { body, .. }
-        | AstStatement::DoWhile { body, .. }
-        | AstStatement::For { body, .. }
-        | AstStatement::Case {
-            statement: body, ..
-        }
-        | AstStatement::DefaultCase {
-            statement: body, ..
-        }
-        | AstStatement::Switch { body, .. } => {
-            let body_collect = collect_labels_statement(body)?;
-            ls = intersect_ls(&ls, &body_collect)?;
-        }
-        AstStatement::LabeledStatement(name, st) => {
-            if ls.contains(name) {
+        S::While(While { body, .. })
+        | S::DoWhile(DoWhile { body, .. })
+        | S::For(For { body, .. })
+        | S::Cased(CasedStatement { body, .. })
+        | S::DCased(DCasedStatement { body, .. })
+        | S::Switch(Switch { body, .. }) => collect_labels_statement(body, ls),
+        S::Labeled(name, st) => {
+            let is_duplicate = !ls.insert(name.clone());
+            if is_duplicate {
                 return Err(SemAnalysisError::LabelRedeclaration(name.clone()));
             }
-            ls.insert(name.clone());
-            let ls_inner = collect_labels_statement(st)?;
-            ls = intersect_ls(&ls, &ls_inner)?;
+            collect_labels_statement(st, ls)
         }
-        AstStatement::If { then, els, .. } => {
-            let then_collect = collect_labels_statement(then)?;
-            ls = intersect_ls(&ls, &then_collect)?;
+        S::If(If { then, els, .. }) => {
+            collect_labels_statement(then, ls)?;
             if let Some(st) = els {
-                let els_collect = collect_labels_statement(st)?;
-                ls = intersect_ls(&ls, &els_collect)?;
+                collect_labels_statement(st, ls)?;
             }
+            Ok(())
         }
-        AstStatement::Compound(block) => {
+        S::Compound(block) => {
             let AstBlock { items } = block;
-            let inner_ls = collect_labels_bims(items)?;
-            ls = intersect_ls(&ls, &inner_ls)?;
+            collect_labels_bims(items, ls)
         }
-        AstStatement::Exp(_)
-        | AstStatement::Break(_)
-        | AstStatement::Continue(_)
-        | AstStatement::Return(_)
-        | AstStatement::Null
-        | AstStatement::Goto(_) => (),
+        S::Exp(_) | S::Break(_) | S::Continue(_) | S::Return(_) | S::Null | S::Goto(_) => Ok(()),
     }
-    Ok(ls)
 }
 
-fn collect_labels_bims(items: &AstBlockItems) -> Result<LabelSet> {
-    let mut ls = LabelSet::new();
-    for item in items {
-        if let AstBlockItem::S(s) = item {
-            let collect = collect_labels_statement(s)?;
-            ls = intersect_ls(&ls, &collect)?;
-        }
+fn collect_labels_bi(item: &AstBlockItem, ls: &mut LabelSet) -> Result<()> {
+    if let AstBlockItem::S(s) = item {
+        return collect_labels_statement(s, ls);
     }
-    Ok(ls)
+    Ok(())
 }
 
-fn validate_statement(st: &AstStatement, ls: &LabelSet) -> Result<()> {
+fn collect_labels_bims(items: &AstBlockItems, ls: &mut LabelSet) -> Result<()> {
+    items
+        .iter()
+        .try_for_each(|item| collect_labels_bi(item, ls))
+}
+
+fn validate_statement(st: &Statement, ls: &LabelSet) -> Result<()> {
+    use Statement as S;
     match st {
-        AstStatement::Goto(label) => {
+        S::Goto(label) => {
             if !ls.contains(label) {
                 return Err(SemAnalysisError::UnknownLabel(label.clone()));
             }
+            Ok(())
         }
-        AstStatement::Compound(block) => {
-            validate_labels_b(block, ls)?;
-        }
-        AstStatement::While { body, .. }
-        | AstStatement::DoWhile { body, .. }
-        | AstStatement::For { body, .. }
-        | AstStatement::Switch { body, .. }
-        | AstStatement::Case {
-            statement: body, ..
-        }
-        | AstStatement::LabeledStatement(_, body)
-        | AstStatement::DefaultCase {
-            statement: body, ..
-        } => {
-            validate_statement(body, ls)?;
-        }
-        AstStatement::If { then, els, .. } => {
+        S::Compound(block) => validate_labels_b(block, ls),
+        S::While(While { body, .. })
+        | S::DoWhile(DoWhile { body, .. })
+        | S::For(For { body, .. })
+        | S::Switch(Switch { body, .. })
+        | S::Cased(CasedStatement { body, .. })
+        | S::DCased(DCasedStatement { body, .. })
+        | S::Labeled(_, body) => validate_statement(body, ls),
+        S::If(If { then, els, .. }) => {
             validate_statement(then, ls)?;
             if let Some(els) = els {
                 validate_statement(els, ls)?;
             }
+            Ok(())
         }
-        AstStatement::Break(_)
-        | AstStatement::Null
-        | AstStatement::Continue(_)
-        | AstStatement::Return(_)
-        | AstStatement::Exp(_) => (),
+        S::Break(_) | S::Null | S::Continue(_) | S::Return(_) | S::Exp(_) => Ok(()),
     }
-    Ok(())
 }
 
 fn validate_labels_bi(item: &AstBlockItem, ls: &LabelSet) -> Result<()> {
@@ -118,22 +85,25 @@ fn validate_labels_bi(item: &AstBlockItem, ls: &LabelSet) -> Result<()> {
 
 fn validate_labels_b(block: &AstBlock, ls: &LabelSet) -> Result<()> {
     let AstBlock { items } = block;
-    for item in items {
-        validate_labels_bi(item, ls)?;
-    }
-    Ok(())
+    items
+        .iter()
+        .try_for_each(|item| validate_labels_bi(item, ls))
 }
 
 fn validate_function_body(body: &AstBlock) -> Result<()> {
     let AstBlock { items } = body;
-    let ls = collect_labels_bims(items)?;
+    let mut ls = LabelSet::new();
+    collect_labels_bims(items, &mut ls)?;
+    validate_labels_b(body, &ls)
+}
 
-    validate_labels_b(body, &ls)?;
+fn validate_fundec(fundec: &FunDec) -> Result<()> {
+    let FunDec { body, .. } = fundec;
+    body.as_ref().map(validate_function_body).transpose()?;
     Ok(())
 }
 
-pub fn ensure_goto_correctness(f: &AstFunction) -> Result<()> {
-    let AstFunction { body, .. } = f;
-    validate_function_body(body)?;
-    Ok(())
+pub fn ensure_goto_correctness(ast: &Ast) -> Result<()> {
+    let Ast { functions } = ast;
+    functions.iter().try_for_each(validate_fundec)
 }
