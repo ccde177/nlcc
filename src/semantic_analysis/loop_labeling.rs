@@ -87,136 +87,100 @@ impl NameGenerator {
     }
 }
 
-fn label_statement(statement: AstStatement, ng: &mut NameGenerator) -> Result<AstStatement> {
+fn label_dcased(mut dcased: DCasedStatement, ng: &mut NameGenerator) -> Result<Statement> {
+    dcased.label = ng
+        .label_default_case()
+        .ok_or(SemAnalysisError::DefaultNotInSwitch)?;
+    dcased.body = label_statement(*dcased.body, ng).map(Box::new)?;
+    Ok(Statement::DCased(dcased))
+}
+
+fn label_cased(mut cased: CasedStatement, ng: &mut NameGenerator) -> Result<Statement> {
+    let const_exp = cased
+        .exp
+        .get_const()
+        .ok_or(SemAnalysisError::NotAConstCase(cased.exp.clone()))?;
+    cased.label = ng
+        .label_case(const_exp)
+        .ok_or(SemAnalysisError::CaseNotInSwitch)?;
+    cased.body = label_statement(*cased.body, ng).map(Box::new)?;
+    Ok(Statement::Cased(cased))
+}
+
+fn label_switch(mut switch: Switch, ng: &mut NameGenerator) -> Result<Statement> {
+    switch.label = ng.new_switch_ctx();
+    switch.body = label_statement(*switch.body, ng).map(Box::new)?;
+    ng.exit_ctx();
+    Ok(Statement::Switch(switch))
+}
+
+fn label_if_st(mut if_st: If, ng: &mut NameGenerator) -> Result<Statement> {
+    if_st.then = label_statement(*if_st.then, ng).map(Box::new)?;
+    if_st.els = if_st.els.map_or(Ok(None), |bst| {
+        label_statement(*bst, ng).map(Box::new).map(Some)
+    })?;
+    Ok(Statement::If(if_st))
+}
+
+fn label_for_st(mut for_st: For, ng: &mut NameGenerator) -> Result<Statement> {
+    for_st.label = ng.new_loop_ctx();
+    for_st.body = label_statement(*for_st.body, ng).map(Box::new)?;
+    Ok(Statement::For(for_st))
+}
+
+fn label_dowhile(mut dowhile: DoWhile, ng: &mut NameGenerator) -> Result<Statement> {
+    dowhile.label = ng.new_loop_ctx();
+    dowhile.body = label_statement(*dowhile.body, ng).map(Box::new)?;
+    ng.exit_ctx();
+    Ok(Statement::DoWhile(dowhile))
+}
+
+fn label_while(mut while_st: While, ng: &mut NameGenerator) -> Result<Statement> {
+    while_st.label = ng.new_loop_ctx();
+    while_st.body = label_statement(*while_st.body, ng).map(Box::new)?;
+    ng.exit_ctx();
+    Ok(Statement::While(while_st))
+}
+
+fn label_statement(statement: Statement, ng: &mut NameGenerator) -> Result<Statement> {
+    use Statement as S;
     match statement {
-        AstStatement::LabeledStatement(label, st) => {
+        S::Labeled(label, st) => {
             let st = label_statement(*st, ng).map(Box::new)?;
-            Ok(AstStatement::LabeledStatement(label, st))
+            Ok(Statement::Labeled(label, st))
         }
-        AstStatement::Compound(block) => {
+        S::Compound(block) => {
             let block = label_block(block, ng)?;
-            Ok(AstStatement::Compound(block))
+            Ok(Statement::Compound(block))
         }
-        AstStatement::Break(_) => {
+        S::Break(_) => {
             let label = ng
                 .label_break()
                 .ok_or(SemAnalysisError::BreakOutsideOfLoop)?;
-            Ok(AstStatement::Break(label))
+            Ok(Statement::Break(label))
         }
-        AstStatement::DefaultCase { statement, .. } => {
-            let label = ng
-                .label_default_case()
-                .ok_or(SemAnalysisError::DefaultNotInSwitch)?;
-            let statement = label_statement(*statement, ng).map(Box::new)?;
-            Ok(AstStatement::DefaultCase { statement, label })
-        }
-        AstStatement::Case { exp, statement, .. } => {
-            let const_exp = exp
-                .get_const()
-                .ok_or(SemAnalysisError::NotAConstCase(exp.clone()))?;
-            let label = ng
-                .label_case(const_exp)
-                .ok_or(SemAnalysisError::CaseNotInSwitch)?;
-            let statement = label_statement(*statement, ng).map(Box::new)?;
-
-            Ok(AstStatement::Case {
-                exp,
-                statement,
-                label,
-            })
-        }
-        AstStatement::Switch {
-            ctrl_exp,
-            body,
-            cases,
-            ..
-        } => {
-            let label = ng.new_switch_ctx();
-            let body = label_statement(*body, ng).map(Box::new)?;
-            ng.exit_ctx();
-            Ok(AstStatement::Switch {
-                ctrl_exp,
-                body,
-                cases,
-                label,
-            })
-        }
-        AstStatement::If {
-            condition,
-            then,
-            els,
-        } => {
-            let then = label_statement(*then, ng).map(Box::new)?;
-            let els = els.map_or(Ok(None), |bst| {
-                label_statement(*bst, ng).map(Box::new).map(Some)
-            })?;
-            Ok(AstStatement::If {
-                condition,
-                then,
-                els,
-            })
-        }
-        AstStatement::For {
-            init,
-            condition,
-            post,
-            body,
-            ..
-        } => {
-            let label = ng.new_loop_ctx();
-            let body = label_statement(*body, ng).map(Box::new)?;
-            Ok(AstStatement::For {
-                init,
-                condition,
-                post,
-                body,
-                label,
-            })
-        }
-        AstStatement::Continue(_) => {
+        S::Continue(_) => {
             let label = ng
                 .label_continue()
                 .ok_or(SemAnalysisError::ContinueOutsideOfLoop)?;
-            Ok(AstStatement::Continue(label))
+            Ok(S::Continue(label))
         }
-        AstStatement::DoWhile {
-            condition, body, ..
-        } => {
-            let label = ng.new_loop_ctx();
-            let body = label_statement(*body, ng).map(Box::new)?;
-            ng.exit_ctx();
-            Ok(AstStatement::DoWhile {
-                condition,
-                body,
-                label,
-            })
-        }
-        AstStatement::While {
-            condition, body, ..
-        } => {
-            let label = ng.new_loop_ctx();
-            let body = label_statement(*body, ng).map(Box::new)?;
-            ng.exit_ctx();
-            Ok(AstStatement::While {
-                condition,
-                label,
-                body,
-            })
-        }
-        AstStatement::Null
-        | AstStatement::Return(_)
-        | AstStatement::Goto(_)
-        | AstStatement::Exp(_) => Ok(statement),
+        S::DCased(dcased) => label_dcased(dcased, ng),
+        S::Cased(cased) => label_cased(cased, ng),
+        S::Switch(switch) => label_switch(switch, ng),
+        S::If(if_st) => label_if_st(if_st, ng),
+        S::For(for_st) => label_for_st(for_st, ng),
+        S::DoWhile(dowhile) => label_dowhile(dowhile, ng),
+        S::While(while_st) => label_while(while_st, ng),
+        S::Null | S::Return(_) | S::Goto(_) | S::Exp(_) => Ok(statement),
     }
 }
 
 fn label_block_item(item: AstBlockItem, ng: &mut NameGenerator) -> Result<AstBlockItem> {
-    match item {
-        AstBlockItem::S(statement) => {
-            let labeled_statement = label_statement(statement, ng)?;
-            Ok(AstBlockItem::S(labeled_statement))
-        }
-        AstBlockItem::D(_) => Ok(item),
+    if let AstBlockItem::S(st) = item {
+        label_statement(st, ng).map(AstBlockItem::S)
+    } else {
+        Ok(item)
     }
 }
 
@@ -232,10 +196,22 @@ fn label_block(block: AstBlock, ng: &mut NameGenerator) -> Result<AstBlock> {
     })
 }
 
-pub fn label_loops(f: AstFunction) -> Result<AstFunction> {
-    let AstFunction { name, body } = f;
-    let mut ng = NameGenerator::new();
-    let body = label_block(body, &mut ng)?;
+fn label_fundec(mut fundec: FunDec, ng: &mut NameGenerator) -> Result<FunDec> {
+    fundec.body = fundec
+        .body
+        .map(|block| label_block(block, ng))
+        .transpose()?;
+    Ok(fundec)
+}
 
-    Ok(AstFunction { name, body })
+pub fn label_loops(ast: Ast) -> Result<Ast> {
+    let Ast { functions } = ast;
+
+    let mut ng = NameGenerator::new();
+    let functions = functions
+        .into_iter()
+        .map(|fundec| label_fundec(fundec, &mut ng))
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(Ast { functions })
 }
