@@ -1,13 +1,13 @@
-// mod case_collection;
-// mod goto;
-// mod loop_labeling;
+mod case_collection;
+mod goto;
+mod loop_labeling;
 mod name_resolution;
 mod typecheck;
 
 use crate::ast::*;
-// use case_collection::collect_cases;
-// use goto::ensure_goto_correctness;
-// use loop_labeling::label_loops;
+use case_collection::collect_cases;
+use goto::ensure_goto_correctness;
+use loop_labeling::label_loops;
 use name_resolution::name_resolution;
 use std::fmt;
 use typecheck::check_types;
@@ -75,12 +75,11 @@ impl fmt::Display for SemAnalysisError {
 impl std::error::Error for SemAnalysisError {}
 
 pub fn validate(ast: Ast) -> Result<Ast> {
-    let validated = name_resolution(ast)?;
+    let validated = name_resolution(ast)
+        .and_then(label_loops)
+        .and_then(collect_cases)?;
     let (type_checked, _sym_table) = check_types(validated)?;
-    // .and_then(label_loops)
-    // .and_then(collect_cases)?;
-
-    // ensure_goto_correctness(&validated)?;
+    ensure_goto_correctness(&type_checked)?;
 
     Ok(type_checked)
 }
