@@ -57,27 +57,22 @@ fn typecheck_var(name: Identifier, sym_table: &mut SymTable) -> Result<Exp> {
     Ok(Exp::Var(name))
 }
 
-fn typecheck_assignment(e1: Box<Exp>, e2: Box<Exp>, sym_table: &mut SymTable) -> Result<Exp> {
-    let e1 = typecheck_exp(*e1, sym_table).map(Box::new)?;
-    let e2 = typecheck_exp(*e2, sym_table).map(Box::new)?;
+fn typecheck_assignment(e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Exp> {
+    let e1 = typecheck_exp(e1, sym_table).map(Box::new)?;
+    let e2 = typecheck_exp(e2, sym_table).map(Box::new)?;
 
     Ok(Exp::Assignment(e1, e2))
 }
 
-fn typecheck_unary(op: AstUnaryOp, exp: Box<Exp>, sym_table: &mut SymTable) -> Result<Exp> {
-    typecheck_exp(*exp, sym_table)
+fn typecheck_unary(op: AstUnaryOp, exp: Exp, sym_table: &mut SymTable) -> Result<Exp> {
+    typecheck_exp(exp, sym_table)
         .map(Box::new)
         .map(|exp| Exp::Unary(op, exp))
 }
 
-fn typecheck_binary(
-    op: AstBinaryOp,
-    e1: Box<Exp>,
-    e2: Box<Exp>,
-    sym_table: &mut SymTable,
-) -> Result<Exp> {
-    let e1 = typecheck_exp(*e1, sym_table).map(Box::new)?;
-    let e2 = typecheck_exp(*e2, sym_table).map(Box::new)?;
+fn typecheck_binary(op: AstBinaryOp, e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Exp> {
+    let e1 = typecheck_exp(e1, sym_table).map(Box::new)?;
+    let e2 = typecheck_exp(e2, sym_table).map(Box::new)?;
 
     Ok(Exp::Binary(op, e1, e2))
 }
@@ -91,9 +86,9 @@ fn typecheck_conditional(mut cond: ConditionalExp, sym_table: &mut SymTable) -> 
 
 fn typecheck_exp(exp: Exp, sym_table: &mut SymTable) -> Result<Exp> {
     match exp {
-        Exp::Assignment(e1, e2) => typecheck_assignment(e1, e2, sym_table),
-        Exp::Unary(op, exp) => typecheck_unary(op, exp, sym_table),
-        Exp::Binary(op, src, dst) => typecheck_binary(op, src, dst, sym_table),
+        Exp::Assignment(e1, e2) => typecheck_assignment(*e1, *e2, sym_table),
+        Exp::Unary(op, exp) => typecheck_unary(op, *exp, sym_table),
+        Exp::Binary(op, src, dst) => typecheck_binary(op, *src, *dst, sym_table),
         Exp::Conditional(cond) => typecheck_conditional(cond, sym_table),
         Exp::Call(f, args) => typecheck_call(f, args, sym_table),
         Exp::Var(name) => typecheck_var(name, sym_table),
@@ -111,7 +106,7 @@ fn typecheck_statement(st: Statement, sym_table: &mut SymTable) -> Result<Statem
         S::For(for_st) => typecheck_for_st(for_st, sym_table),
         S::Cased(cased) => typecheck_cased_st(cased, sym_table),
         S::DCased(dcased) => typecheck_dcased_st(dcased, sym_table),
-        S::Labeled(name, st) => typecheck_labeled_st(name, st, sym_table),
+        S::Labeled(name, st) => typecheck_labeled_st(name, *st, sym_table),
         S::Compound(block) => typecheck_block(block, sym_table).map(S::Compound).map(Ok)?,
         S::Return(exp) => typecheck_exp(exp, sym_table).map(S::Return).map(Ok)?,
         S::Exp(exp) => typecheck_exp(exp, sym_table).map(S::Exp).map(Ok)?,
@@ -121,10 +116,10 @@ fn typecheck_statement(st: Statement, sym_table: &mut SymTable) -> Result<Statem
 
 fn typecheck_labeled_st(
     name: String,
-    st: Box<Statement>,
+    st: Statement,
     sym_table: &mut SymTable,
 ) -> Result<Statement> {
-    typecheck_statement(*st, sym_table)
+    typecheck_statement(st, sym_table)
         .map(Box::new)
         .map(|bst| Statement::Labeled(name, bst))
 }

@@ -404,7 +404,7 @@ fn parse_case(cursor: &mut Cursor) -> Result<Statement> {
         label
     };
     
-    Ok(Statement::CasedStatement(cased_statement))
+    Ok(Statement::Cased(cased_statement))
 }
 
 fn parse_default_case(cursor: &mut Cursor) -> Result<Statement> {
@@ -417,7 +417,7 @@ fn parse_default_case(cursor: &mut Cursor) -> Result<Statement> {
         label,
     };
     
-    Ok(Statement::DCasedStatement(dcs))
+    Ok(Statement::DCased(dcs))
 }
 
 fn parse_goto(cursor: &mut Cursor) -> Result<Statement> {

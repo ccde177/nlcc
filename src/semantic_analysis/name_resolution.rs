@@ -154,10 +154,10 @@ fn resolve_compound_st(block: AstBlock, im: &mut IdentifierMap) -> Result<Statem
 
 fn resolve_labeled_st(
     label: Identifier,
-    st: Box<Statement>,
+    st: Statement,
     im: &mut IdentifierMap,
 ) -> Result<Statement> {
-    let statement = resolve_statement(*st, im).map(Box::new)?;
+    let statement = resolve_statement(st, im).map(Box::new)?;
     Ok(Statement::Labeled(label, statement))
 }
 
@@ -172,7 +172,7 @@ fn resolve_statement(st: Statement, im: &mut IdentifierMap) -> Result<Statement>
         S::Cased(cs) => resolve_case(cs, im),
         S::DCased(dcs) => resolve_dcase(dcs, im),
         S::Compound(block) => resolve_compound_st(block, im),
-        S::Labeled(label, statement) => resolve_labeled_st(label, statement, im),
+        S::Labeled(label, statement) => resolve_labeled_st(label, *statement, im),
         S::Return(e) => resolve_exp(e, im).map(S::Return),
         S::Exp(e) => resolve_exp(e, im).map(S::Exp),
         _ => Ok(st),
@@ -182,7 +182,7 @@ fn resolve_statement(st: Statement, im: &mut IdentifierMap) -> Result<Statement>
 fn resolve_exp_call(name: Identifier, args: Vec<Exp>, im: &mut IdentifierMap) -> Result<Exp> {
     let new_name = im
         .get_uniq_name(&name)
-        .ok_or(SemAnalysisError::UndeclaredFunction(name.clone()))?;
+        .ok_or(SemAnalysisError::UndeclaredFunction(name))?;
     let args = args.into_iter()
         .map(|arg| resolve_exp(arg, im))
         .collect::<Result<Vec<_>>>()?;
@@ -197,17 +197,17 @@ fn resolve_exp_conditional(mut cond_exp: ConditionalExp, im: &mut IdentifierMap)
     Ok(Exp::Conditional(cond_exp))
 }
 
-fn resolve_exp_assign(left: Box<Exp>, right: Box<Exp>, im: &mut IdentifierMap) -> Result<Exp> {
+fn resolve_exp_assign(left: Exp, right: Exp, im: &mut IdentifierMap) -> Result<Exp> {
     if !left.is_var() {
-        return Err(SemAnalysisError::WrongLvalue(*left));
+        return Err(SemAnalysisError::WrongLvalue(left));
     }
-    let left = resolve_exp(*left, im).map(Box::new)?;
-    let right = resolve_exp(*right, im).map(Box::new)?;
+    let left = resolve_exp(left, im).map(Box::new)?;
+    let right = resolve_exp(right, im).map(Box::new)?;
     Ok(Exp::Assignment(left, right))
 }
 
-fn resolve_exp_incdec(op: AstUnaryOp, e: Box<Exp>, im: &mut IdentifierMap) -> Result<Exp> {
-    let exp = resolve_exp(*e, im)?;
+fn resolve_exp_incdec(op: AstUnaryOp, e: Exp, im: &mut IdentifierMap) -> Result<Exp> {
+    let exp = resolve_exp(e, im)?;
     if exp.is_var() {
         Ok(Exp::Unary(op, Box::new(exp)))
     } else {
@@ -217,23 +217,23 @@ fn resolve_exp_incdec(op: AstUnaryOp, e: Box<Exp>, im: &mut IdentifierMap) -> Re
 
 fn resolve_exp_var(name: Identifier, im: &mut IdentifierMap) -> Result<Exp> {
     im.get_uniq_name(&name)
-        .ok_or(SemAnalysisError::VariableNotDeclared(name.clone()))
-        .map(|n| Exp::Var(n.to_string()))
+        .ok_or(SemAnalysisError::VariableNotDeclared(name))
+        .map(Exp::Var)
 }
 
-fn resolve_exp_unary(op: AstUnaryOp, exp: Box<Exp>, im: &mut IdentifierMap) -> Result<Exp> {
-    let exp = resolve_exp(*exp, im).map(Box::new)?;
+fn resolve_exp_unary(op: AstUnaryOp, exp: Exp, im: &mut IdentifierMap) -> Result<Exp> {
+    let exp = resolve_exp(exp, im).map(Box::new)?;
     Ok(Exp::Unary(op, exp))
 }
 
 fn resolve_exp_binary(
     op: AstBinaryOp,
-    src: Box<Exp>,
-    dst: Box<Exp>,
+    src: Exp,
+    dst: Exp,
     im: &mut IdentifierMap,
 ) -> Result<Exp> {
-    let src = resolve_exp(*src, im).map(Box::new)?;
-    let dst = resolve_exp(*dst, im).map(Box::new)?;
+    let src = resolve_exp(src, im).map(Box::new)?;
+    let dst = resolve_exp(dst, im).map(Box::new)?;
     Ok(Exp::Binary(op, src, dst))
 }
 
@@ -245,13 +245,13 @@ fn resolve_exp(exp: Exp, im: &mut IdentifierMap) -> Result<Exp> {
             | AstUnaryOp::PostfixDecrement
             | AstUnaryOp::PrefixDecrement),
             e,
-        ) => resolve_exp_incdec(op, e, im),
-        Exp::Unary(op, exp) => resolve_exp_unary(op, exp, im),
+        ) => resolve_exp_incdec(op, *e, im),
+        Exp::Unary(op, exp) => resolve_exp_unary(op, *exp, im),
         Exp::Conditional(cond_exp) => resolve_exp_conditional(cond_exp, im),
-        Exp::Assignment(left, right) => resolve_exp_assign(left, right, im),
+        Exp::Assignment(left, right) => resolve_exp_assign(*left, *right, im),
         Exp::Var(name) => resolve_exp_var(name, im),
         Exp::Call(name, args) => resolve_exp_call(name, args, im),
-        Exp::Binary(op, src, dst) => resolve_exp_binary(op, src, dst, im),
+        Exp::Binary(op, src, dst) => resolve_exp_binary(op, *src, *dst, im),
         Exp::Constant(_) => Ok(exp),
     }
 }
@@ -273,7 +273,7 @@ fn resolve_fundec(dec: FunDec, im: &mut IdentifierMap) -> Result<FunDec> {
         },
     );
 
-    let mut inner_map = IdentifierMap::new_scope_copy(&im);
+    let mut inner_map = IdentifierMap::new_scope_copy(im);
 
     let mut new_params = Vec::with_capacity(dec.params.len());
     for param in dec.params {
