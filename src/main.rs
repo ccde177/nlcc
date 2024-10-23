@@ -1,3 +1,5 @@
+#![deny(unused_must_use)]
+
 #![warn(clippy::pedantic)]
 #![allow(clippy::wildcard_imports)]
 #![allow(clippy::too_many_lines)]
@@ -34,7 +36,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
-    let tokens = lexer::lex(source)?;
+    let tokens = lexer::lex(&source)?;
     fs::remove_file(&preprocessed)?;
 
     if args.lex {
@@ -42,7 +44,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let ast = parser::parse(tokens)?;
+    let ast = parser::parse(&tokens)?;
 
     if args.parse {
         dbg!(ast);
@@ -56,7 +58,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let tacky = tacky::emit_tacky(validated_ast.clone());
+    let tacky = tacky::emit_tacky(validated_ast);
 
     if args.tacky {
         dbg!(tacky);

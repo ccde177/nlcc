@@ -42,8 +42,8 @@ pub type Cases = Vec<(Option<u64>, Identifier)>;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DoWhile {
-    pub condition: Exp,
     pub body: Box<Statement>,
+    pub condition: Exp,
     pub label: Identifier,
 }
 

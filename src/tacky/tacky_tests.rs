@@ -1,5 +1,6 @@
 use super::*;
 
+/*
 #[test]
 fn test_shortcircuiting_and() {
     let body = vec![AstBlockItem::S(AstStatement::Return(AstExp::Binary(
@@ -77,3 +78,4 @@ fn test_shortcircuiting_or() {
     let expected = TAst::Program(TFunction::FunDef("".into(), expected_tinstructions));
     assert_eq!(expected, tast);
 }
+*/

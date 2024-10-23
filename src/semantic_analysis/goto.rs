@@ -2,9 +2,32 @@ use crate::ast::*;
 use crate::semantic_analysis::{Result, SemAnalysisError};
 use std::collections::HashSet;
 
-type LabelSet = HashSet<Identifier>;
+struct LabelSet {
+    base: Identifier,
+    inner: HashSet<Identifier>,
+}
 
-fn collect_labels_statement(statement: &Statement, ls: &mut LabelSet) -> Result<()> {
+impl LabelSet {
+    fn new(base: Identifier) -> Self {
+        Self {
+            base,
+            inner: HashSet::new(),
+        }
+    }
+
+    fn insert(&mut self, value: Identifier) -> bool {
+        self.inner.insert(value)
+    }
+
+    fn get_new_name(&self, value: &Identifier) -> Identifier {
+        format!("{}.{value}", self.base)
+    }
+    fn contains(&self, value: &Identifier) -> bool {
+        self.inner.contains(value)
+    }
+}
+
+fn collect_labels_statement(statement: &mut Statement, ls: &mut LabelSet) -> Result<()> {
     use Statement as S;
     match statement {
         S::While(While { body, .. })
@@ -14,6 +37,7 @@ fn collect_labels_statement(statement: &Statement, ls: &mut LabelSet) -> Result<
         | S::DCased(DCasedStatement { body, .. })
         | S::Switch(Switch { body, .. }) => collect_labels_statement(body, ls),
         S::Labeled(name, st) => {
+            *name = ls.get_new_name(&name);
             let is_duplicate = !ls.insert(name.clone());
             if is_duplicate {
                 return Err(SemAnalysisError::LabelRedeclaration(name.clone()));
@@ -31,20 +55,24 @@ fn collect_labels_statement(statement: &Statement, ls: &mut LabelSet) -> Result<
             let AstBlock { items } = block;
             collect_labels_bims(items, ls)
         }
-        S::Exp(_) | S::Break(_) | S::Continue(_) | S::Return(_) | S::Null | S::Goto(_) => Ok(()),
+        S::Goto(label) => {
+            *label = ls.get_new_name(&label);
+            Ok(())
+        }
+        S::Exp(_) | S::Break(_) | S::Continue(_) | S::Return(_) | S::Null => Ok(()),
     }
 }
 
-fn collect_labels_bi(item: &AstBlockItem, ls: &mut LabelSet) -> Result<()> {
+fn collect_labels_bi(item: &mut AstBlockItem, ls: &mut LabelSet) -> Result<()> {
     if let AstBlockItem::S(s) = item {
         return collect_labels_statement(s, ls);
     }
     Ok(())
 }
 
-fn collect_labels_bims(items: &AstBlockItems, ls: &mut LabelSet) -> Result<()> {
+fn collect_labels_bims(items: &mut AstBlockItems, ls: &mut LabelSet) -> Result<()> {
     items
-        .iter()
+        .iter_mut()
         .try_for_each(|item| collect_labels_bi(item, ls))
 }
 
@@ -90,20 +118,22 @@ fn validate_labels_b(block: &AstBlock, ls: &LabelSet) -> Result<()> {
         .try_for_each(|item| validate_labels_bi(item, ls))
 }
 
-fn validate_function_body(body: &AstBlock) -> Result<()> {
+fn validate_function_body(body: &mut AstBlock, ls: &mut LabelSet) -> Result<()> {
     let AstBlock { items } = body;
-    let mut ls = LabelSet::new();
-    collect_labels_bims(items, &mut ls)?;
+    collect_labels_bims(items, ls)?;
     validate_labels_b(body, &ls)
 }
 
-fn validate_fundec(fundec: &FunDec) -> Result<()> {
-    let FunDec { body, .. } = fundec;
-    body.as_ref().map(validate_function_body).transpose()?;
+fn validate_fundec(fundec: &mut FunDec) -> Result<()> {
+    let FunDec { body, name, .. } = fundec;
+    let mut ls = LabelSet::new(name.clone());
+    body.as_mut()
+        .map(|body| validate_function_body(body, &mut ls))
+        .transpose()?;
     Ok(())
 }
 
-pub fn ensure_goto_correctness(ast: &Ast) -> Result<()> {
+pub fn ensure_goto_correctness(ast: &mut Ast) -> Result<()> {
     let Ast { functions } = ast;
-    functions.iter().try_for_each(validate_fundec)
+    functions.iter_mut().try_for_each(validate_fundec)
 }

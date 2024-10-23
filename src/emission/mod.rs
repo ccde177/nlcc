@@ -1,4 +1,4 @@
-use crate::codegen::{AsmAst, BinaryOp, Condition, Function, Instruction, Operand, Register, UnaryOp};
+use crate::codegen::*;
 
 use std::fmt;
 
@@ -10,6 +10,10 @@ impl fmt::Display for Register {
             Self::Dx => write!(f, "%edx"),
             Self::R10 => write!(f, "%r10d"),
             Self::R11 => write!(f, "%r11d"),
+            Self::R8 => write!(f, "%r8d"),
+            Self::R9 => write!(f, "%r9d"),
+            Self::Si => write!(f, "%esi"),
+            Self::Di => write!(f, "%edi"),
         }
     }
 }
@@ -19,7 +23,7 @@ impl fmt::Display for Operand {
         match self {
             Self::Imm(i) => write!(f, "${i}"),
             Self::Reg(r) => write!(f, "{r}"),
-            Self::Stack(i) => write!(f, "-{i}(%rbp)"),
+            Self::Stack(i) => write!(f, "{i}(%rbp)"),
             Self::Pseudo(_) => unreachable!(),
         }
     }
@@ -50,7 +54,7 @@ impl fmt::Display for BinaryOp {
 }
 
 #[cfg(target_os = "linux")]
-impl fmt::Display for Function {
+impl fmt::Display for AsmFunction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "\t.globl {}", self.name)?;
         writeln!(f, "{}:", self.name)?;
@@ -60,16 +64,17 @@ impl fmt::Display for Function {
         for instruction in &self.body {
             writeln!(f, "\t{instruction}")?;
         }
-        writeln!(f, ".section .note.GNU-stak,\"\",@progbits")?;
+
         Ok(())
     }
 }
 
 impl fmt::Display for AsmAst {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Program(fun) => write!(f, "{fun}"),
+        for function in &self.functions {
+            write!(f, "{function}")?;
         }
+        writeln!(f, ".section .note.GNU-stak,\"\",@progbits")
     }
 }
 
@@ -86,9 +91,31 @@ impl fmt::Display for Condition {
     }
 }
 
-impl fmt::Display for Instruction {
+fn reg_to_8(reg: &Operand) -> String {
+    if let Operand::Reg(reg) = reg {
+        match reg {
+            Register::Ax => "%rax",
+            Register::Cx => "%rcx",
+            Register::Dx => "%rdx",
+            Register::Di => "%rdi",
+            Register::Si => "%rsi",
+            Register::R8 => "%r8",
+            Register::R9 => "%r9",
+            Register::R10 => "%r10",
+            Register::R11 => "%r11",
+        }
+        .into()
+    } else {
+        reg.to_string()
+    }
+}
+
+impl fmt::Display for AsmInstruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::DeallocateStack(u) => write!(f, "addq ${u}, %rsp"),
+            Self::Push(op) => write!(f, "pushq {}", reg_to_8(op)),
+            Self::Call(name) => write!(f, "call {name}"),
             Self::AllocateStack(i) => write!(f, "subq ${i}, %rsp"),
             Self::Unary(op, operand) => write!(f, "{op} {operand}"),
             Self::Mov(o1, o2) => write!(f, "movl {o1}, {o2}"),
@@ -114,9 +141,13 @@ impl fmt::Display for Instruction {
                     let reg_str = match reg {
                         Register::Ax => "al",
                         Register::Dx => "dl",
+                        Register::R8 => "r8b",
                         Register::R10 => "r10b",
                         Register::R11 => "r11b",
-                        Register::Cx => "cx",
+                        Register::Cx => "cl",
+                        Register::Di => "dil",
+                        Register::Si => "sil",
+                        Register::R9 => "r9b",
                     };
                     write!(f, "set{cond_code} {reg_str}")
                 } else {

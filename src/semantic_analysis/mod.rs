@@ -75,11 +75,11 @@ impl fmt::Display for SemAnalysisError {
 impl std::error::Error for SemAnalysisError {}
 
 pub fn validate(ast: Ast) -> Result<Ast> {
-    let validated = name_resolution(ast)
+    let mut validated = name_resolution(ast)
         .and_then(label_loops)
         .and_then(collect_cases)?;
+    ensure_goto_correctness(&mut validated)?;
     let (type_checked, _sym_table) = check_types(validated)?;
-    ensure_goto_correctness(&type_checked)?;
 
     Ok(type_checked)
 }

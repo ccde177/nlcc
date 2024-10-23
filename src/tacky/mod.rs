@@ -9,14 +9,14 @@ pub type TInstructions = Vec<TInstruction>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TAst {
-    functions: Vec<TFunction>,
+    pub functions: Vec<TFunction>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TFunction {
-    name: Identifier,
-    params: Vec<Identifier>,
-    body: TInstructions,
+    pub name: Identifier,
+    pub params: Vec<Identifier>,
+    pub body: TInstructions,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -280,7 +280,8 @@ fn emit_conditional(cond: ConditionalExp, instructions: &mut TInstructions) -> T
 }
 
 fn emit_call(name: Identifier, args: Vec<Exp>, instructions: &mut TInstructions) -> TValue {
-    let args = args.into_iter()
+    let args = args
+        .into_iter()
         .map(|e| emit_expression(e, instructions))
         .collect();
     let dst_name = get_uniq_name();
