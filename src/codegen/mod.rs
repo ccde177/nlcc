@@ -153,13 +153,6 @@ impl StackAllocator {
         }
     }
 
-    fn new() -> Self {
-        Self {
-            offset: 0,
-            map: StackAllocMap::new(),
-        }
-    }
-
     fn allocate_if_pseudo(&mut self, operand: Operand) -> Operand {
         match operand {
             Operand::Pseudo(name) => {
@@ -177,8 +170,10 @@ impl StackAllocator {
         })
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn get_prologue(&self) -> AsmInstruction {
-        AsmInstruction::AllocateStack((self.offset + (16 - (self.offset % 16))) as u64)
+        let stack_size = self.offset + (16 - (self.offset % 16));
+        AsmInstruction::AllocateStack(stack_size as u64)
     }
 }
 

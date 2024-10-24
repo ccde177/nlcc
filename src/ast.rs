@@ -18,7 +18,6 @@ pub enum AstBlockItem {
     D(Declaration),
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Declaration {
     Var(VarDec),
@@ -48,10 +47,10 @@ pub struct DoWhile {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct While  {
+pub struct While {
     pub condition: Exp,
     pub body: Box<Statement>,
-    pub label: Identifier,    
+    pub label: Identifier,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -67,7 +66,7 @@ pub struct For {
 pub struct If {
     pub condition: Exp,
     pub then: Box<Statement>,
-    pub els: Option<Box<Statement>>,    
+    pub els: Option<Box<Statement>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -117,10 +116,10 @@ pub enum AstForInit {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConditionalExp{
+pub struct ConditionalExp {
     pub condition: Box<Exp>,
     pub then: Box<Exp>,
-    pub els: Box<Exp>    
+    pub els: Box<Exp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +155,7 @@ pub enum AstBinaryOp {
     ShiftRight,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AstUnaryOp {
     Complement,
     Negate,
@@ -170,10 +169,6 @@ pub enum AstUnaryOp {
 impl Exp {
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
-    }
-
-    pub fn is_const(&self) -> bool {
-        matches!(self, Exp::Constant(_))
     }
 
     pub fn get_const(&self) -> Option<u64> {

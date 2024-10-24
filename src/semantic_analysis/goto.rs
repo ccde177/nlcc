@@ -37,7 +37,7 @@ fn collect_labels_statement(statement: &mut Statement, ls: &mut LabelSet) -> Res
         | S::DCased(DCasedStatement { body, .. })
         | S::Switch(Switch { body, .. }) => collect_labels_statement(body, ls),
         S::Labeled(name, st) => {
-            *name = ls.get_new_name(&name);
+            *name = ls.get_new_name(name);
             let is_duplicate = !ls.insert(name.clone());
             if is_duplicate {
                 return Err(SemAnalysisError::LabelRedeclaration(name.clone()));
@@ -56,7 +56,7 @@ fn collect_labels_statement(statement: &mut Statement, ls: &mut LabelSet) -> Res
             collect_labels_bims(items, ls)
         }
         S::Goto(label) => {
-            *label = ls.get_new_name(&label);
+            *label = ls.get_new_name(label);
             Ok(())
         }
         S::Exp(_) | S::Break(_) | S::Continue(_) | S::Return(_) | S::Null => Ok(()),
@@ -121,7 +121,7 @@ fn validate_labels_b(block: &AstBlock, ls: &LabelSet) -> Result<()> {
 fn validate_function_body(body: &mut AstBlock, ls: &mut LabelSet) -> Result<()> {
     let AstBlock { items } = body;
     collect_labels_bims(items, ls)?;
-    validate_labels_b(body, &ls)
+    validate_labels_b(body, ls)
 }
 
 fn validate_fundec(fundec: &mut FunDec) -> Result<()> {

@@ -550,7 +550,7 @@ fn emit_block_items(blockitems: AstBlockItems) -> TInstructions {
         match block {
             AstBlockItem::S(s) => emit_statement(s, &mut instructions),
             AstBlockItem::D(Declaration::Var(vardec)) => emit_vardec(vardec, &mut instructions),
-            _ => (),
+            AstBlockItem::D(_) => (),
         }
     }
     instructions
@@ -562,7 +562,7 @@ fn emit_fundec(f: FunDec) -> Option<TFunction> {
         let AstBlock { items } = body;
         let mut body = emit_block_items(items);
         body.push(TInstruction::Return(TValue::Constant(0)));
-        let f = TFunction { name, body, params };
+        let f = TFunction { name, params, body };
         Some(f)
     } else {
         None

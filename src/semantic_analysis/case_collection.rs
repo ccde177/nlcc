@@ -29,8 +29,8 @@ fn collect_dcased(dcased: DCasedStatement) -> Result<(Statement, Cases)> {
     Ok((result, cases))
 }
 
-fn collect_cased(cased: CasedStatement) -> Result<(Statement, Cases)> {
-    let CasedStatement { exp, body, label } = cased;
+fn collect_cased(cased_st: CasedStatement) -> Result<(Statement, Cases)> {
+    let CasedStatement { exp, body, label } = cased_st;
     let u = exp
         .get_const()
         .ok_or(SemAnalysisError::NotAConstCase(exp.clone()))?;
@@ -48,23 +48,11 @@ fn collect_cased(cased: CasedStatement) -> Result<(Statement, Cases)> {
     Ok((result, cases))
 }
 
-fn collect_switch(switch: Switch) -> Result<(Statement, Cases)> {
-    let Switch {
-        ctrl_exp,
-        body,
-        label,
-        ..
-    } = switch;
-    let (body, cases) = collect_statement(*body)?;
-    let body = Box::new(body);
-    let cases = cases.into_iter().collect();
-    let result = Switch {
-        ctrl_exp,
-        body,
-        cases,
-        label,
-    };
-    Ok((Statement::Switch(result), Cases::new()))
+fn collect_switch(mut switch: Switch) -> Result<(Statement, Cases)> {
+    let (body, cases) = collect_statement(*switch.body)?;
+    switch.body = Box::new(body);
+    switch.cases = cases.into_iter().collect();
+    Ok((Statement::Switch(switch), Cases::new()))
 }
 
 fn collect_if_st(if_st: If) -> Result<(Statement, Cases)> {
@@ -100,58 +88,22 @@ fn collect_if_st(if_st: If) -> Result<(Statement, Cases)> {
     }
 }
 
-fn collect_for_st(for_st: For) -> Result<(Statement, Cases)> {
-    let For {
-        init,
-        condition,
-        post,
-        body,
-        label,
-    } = for_st;
-    let (body, cases) = collect_statement(*body)?;
-    let body = Box::new(body);
-    let result = For {
-        init,
-        condition,
-        post,
-        body,
-        label,
-    };
-
-    Ok((Statement::For(result), cases))
+fn collect_for_st(mut for_st: For) -> Result<(Statement, Cases)> {
+    let (body, cases) = collect_statement(*for_st.body)?;
+    for_st.body = Box::new(body);
+    Ok((Statement::For(for_st), cases))
 }
 
-fn collect_dowhile(dowhile: DoWhile) -> Result<(Statement, Cases)> {
-    let DoWhile {
-        body,
-        condition,
-        label,
-    } = dowhile;
-    let (body, cases) = collect_statement(*body)?;
-    let body = Box::new(body);
-    let result = DoWhile {
-        condition,
-        body,
-        label,
-    };
-    Ok((Statement::DoWhile(result), cases))
+fn collect_dowhile(mut dowhile: DoWhile) -> Result<(Statement, Cases)> {
+    let (body, cases) = collect_statement(*dowhile.body)?;
+    dowhile.body = Box::new(body);
+    Ok((Statement::DoWhile(dowhile), cases))
 }
 
-fn collect_while(while_st: While) -> Result<(Statement, Cases)> {
-    let While {
-        condition,
-        body,
-        label,
-    } = while_st;
-    let (body, cases) = collect_statement(*body)?;
-    let body = Box::new(body);
-    let result = While {
-        condition,
-        body,
-        label,
-    };
-
-    Ok((Statement::While(result), cases))
+fn collect_while(mut while_st: While) -> Result<(Statement, Cases)> {
+    let (body, cases) = collect_statement(*while_st.body)?;
+    while_st.body = Box::new(body);
+    Ok((Statement::While(while_st), cases))
 }
 
 fn collect_statement(statement: Statement) -> Result<(Statement, Cases)> {
