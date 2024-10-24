@@ -68,6 +68,8 @@ pub enum Token {
     KwDefault,
     Switch,
     Comma,
+    Static,
+    Extern,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -215,6 +217,8 @@ impl From<&str> for Token {
             "case" => Self::Case,
             "default" => Self::KwDefault,
             "switch" => Self::Switch,
+            "extern" => Self::Extern,
+            "static" => Self::Static,
             _ => Self::Identifier(s.to_owned()),
         }
     }
@@ -224,9 +228,10 @@ fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token> {
     match (first, second, third) {
         ('>', '>', '=') => Ok(Token::AssignShr),
         ('<', '<', '=') => Ok(Token::AssignShl),
-        _ => Err(LexError::BadMcharOperator(format!("{first}{second}{third}"))),
+        _ => Err(LexError::BadMcharOperator(format!(
+            "{first}{second}{third}"
+        ))),
     }
-
 }
 
 fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
@@ -288,7 +293,7 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
 
     if let Some(next) = cursor.peek() {
         if next.is_alphabetic() || next == '_' {
-            return Err(LexError::UnexpectedChar(next))
+            return Err(LexError::UnexpectedChar(next));
         }
     }
 
