@@ -183,10 +183,11 @@ fn resolve_exp_call(name: Identifier, args: Vec<Exp>, im: &mut IdentifierMap) ->
     let new_name = im
         .get_uniq_name(&name)
         .ok_or(SemAnalysisError::UndeclaredFunction(name))?;
-    let args = args.into_iter()
+    let args = args
+        .into_iter()
         .map(|arg| resolve_exp(arg, im))
         .collect::<Result<Vec<_>>>()?;
-    
+
     Ok(Exp::Call(new_name, args))
 }
 
@@ -226,12 +227,7 @@ fn resolve_exp_unary(op: AstUnaryOp, exp: Exp, im: &mut IdentifierMap) -> Result
     Ok(Exp::Unary(op, exp))
 }
 
-fn resolve_exp_binary(
-    op: AstBinaryOp,
-    src: Exp,
-    dst: Exp,
-    im: &mut IdentifierMap,
-) -> Result<Exp> {
+fn resolve_exp_binary(op: AstBinaryOp, src: Exp, dst: Exp, im: &mut IdentifierMap) -> Result<Exp> {
     let src = resolve_exp(src, im).map(Box::new)?;
     let dst = resolve_exp(dst, im).map(Box::new)?;
     Ok(Exp::Binary(op, src, dst))
@@ -291,6 +287,7 @@ fn resolve_fundec(dec: FunDec, im: &mut IdentifierMap) -> Result<FunDec> {
         name: dec.name,
         params: new_params,
         body: new_body,
+        storage_class: dec.storage_class,
     })
 }
 
@@ -304,12 +301,25 @@ fn resolve_param(param: Identifier, im: &mut IdentifierMap) -> Result<Identifier
 }
 
 fn resolve_vardec(dec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
-    if im.is_in_current_scope(&dec.name) {
-        return Err(SemAnalysisError::IdentifierRedeclaration(dec.name.clone()));
+    if let Some(prev_entry) = im.get(&dec.name) {
+        if prev_entry.in_current_scope {
+            if !(prev_entry.has_linkage && dec.storage_class == Some(StorageClass::Extern)) {
+                return Err(SemAnalysisError::IdentifierRedeclaration(dec.name.clone()));
+            }
+        }
+    }
+
+    if dec.storage_class == Some(StorageClass::Extern) {
+        let entry = MapEntry {
+            name: dec.name.clone(),
+            in_current_scope: true,
+            has_linkage: true,
+        };
+        im.add(dec.name.clone(), entry);
+        return Ok(dec);
     }
 
     let uniq_name = im.add_uniq_to_scope(dec.name);
-
     let mut exp = None;
     if let Some(e) = dec.init {
         exp = Some(resolve_exp(e, im)?);
@@ -318,6 +328,7 @@ fn resolve_vardec(dec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
     Ok(VarDec {
         name: uniq_name,
         init: exp,
+        storage_class: dec.storage_class,
     })
 }
 
@@ -328,7 +339,7 @@ fn resolve_local_declaration(dec: Declaration, im: &mut IdentifierMap) -> Result
             Ok(Declaration::Var(resolved))
         }
         Declaration::Fun(fundec) => {
-            if fundec.body.is_some() {
+            if fundec.body.is_some() || fundec.storage_class == Some(StorageClass::Static) {
                 return Err(SemAnalysisError::LocalFunDefinition(fundec.name));
             }
             let resolved = resolve_fundec(fundec, im)?;
@@ -360,22 +371,33 @@ fn resolve_block(block: AstBlock, im: &mut IdentifierMap) -> Result<AstBlock> {
     Ok(AstBlock { items: result })
 }
 
-// Even if this function seems pointless right now,
-// later it will take Declaration as first parameter
-fn resolve_global_declaration(dec: FunDec, im: &mut IdentifierMap) -> Result<FunDec> {
-    resolve_fundec(dec, im)
+fn resolve_global_declaration(dec: Declaration, im: &mut IdentifierMap) -> Result<Declaration> {
+    match dec {
+        Declaration::Fun(fundec) => resolve_fundec(fundec, im).map(Declaration::Fun),
+        Declaration::Var(vardec) => resolve_toplevel_vardec(vardec, im).map(Declaration::Var),
+    }
+}
+
+fn resolve_toplevel_vardec(vardec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
+    let entry = MapEntry {
+        name: vardec.name.clone(),
+        in_current_scope: true,
+        has_linkage: true,
+    };
+    im.add(vardec.name.clone(), entry);
+    Ok(vardec)
 }
 
 pub fn name_resolution(ast: Ast) -> Result<Ast> {
-    let Ast { functions } = ast;
+    let Ast { declarations } = ast;
     let mut resolved_decs = Vec::new();
     let mut im = IdentifierMap::new();
-    for dec in functions {
+    for dec in declarations {
         let resolved = resolve_global_declaration(dec, &mut im)?;
         resolved_decs.push(resolved);
     }
 
     Ok(Ast {
-        functions: resolved_decs,
+        declarations: resolved_decs,
     })
 }

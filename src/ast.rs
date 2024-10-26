@@ -2,7 +2,7 @@ pub type Identifier = String;
 
 #[derive(Debug, Clone)]
 pub struct Ast {
-    pub functions: Vec<FunDec>,
+    pub declarations: Vec<Declaration>,
 }
 
 pub type AstBlockItems = Vec<AstBlockItem>;
@@ -10,6 +10,18 @@ pub type AstBlockItems = Vec<AstBlockItem>;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AstBlock {
     pub items: AstBlockItems,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Type {
+    Int,
+    Fun { nargs: usize },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum StorageClass {
+    Static,
+    Extern,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,12 +41,14 @@ pub struct FunDec {
     pub name: Identifier,
     pub params: Vec<Identifier>,
     pub body: Option<AstBlock>,
+    pub storage_class: Option<StorageClass>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VarDec {
     pub name: Identifier,
     pub init: Option<Exp>,
+    pub storage_class: Option<StorageClass>,
 }
 
 pub type Cases = Vec<(Option<u64>, Identifier)>;

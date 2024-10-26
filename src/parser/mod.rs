@@ -18,6 +18,9 @@ pub enum ParseError {
     BadUnaryOp(Token),
     TrailingComma,
     UnexpectedEof,
+    InvalidTypeSpecifiers(Vec<Token>),
+    InvalidStorageClass(Vec<Token>),
+    BadForInit,
 }
 
 impl Display for ParseError {
@@ -35,6 +38,16 @@ impl Display for ParseError {
             PE::BadUnaryOp(t) => write!(f, "Bad unary operator {t:?}"),
             PE::UnexpectedEof => write!(f, "Reached unexpected EOF"),
             PE::TrailingComma => write!(f, "Trailing comman in parameter list"),
+            PE::InvalidTypeSpecifiers(ss) => {
+                write!(f, "Invalid combination of type specifiers: {ss:?}")
+            }
+            PE::InvalidStorageClass(ss) => {
+                write!(f, "Invalid combination of storage class specifiers: {ss:?}")
+            }
+            PE::BadForInit => write!(
+                f,
+                "Function declarations are not allowed inside for loop initialization"
+            ),
         }
     }
 }
@@ -117,16 +130,6 @@ fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
     Ok(params)
 }
 
-fn parse_vardec(cursor: &mut Cursor) -> Result<VarDec> {
-    cursor.expect(&Token::Int)?;
-    let name = parse_identifier(cursor)?;
-    let assign = cursor.bump_if(&Token::Assign);
-    let init = assign.then(|| parse_exp(cursor, 0)).transpose()?;
-    cursor.expect(&Token::Semicolon)?;
-
-    Ok(VarDec { name, init })
-}
-
 fn parse_conditional_middle(cursor: &mut Cursor) -> Result<Exp> {
     cursor.expect(&Token::QuestionMark)?;
     let exp = parse_exp(cursor, 0)?;
@@ -167,9 +170,9 @@ fn parse_exp_conditional(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Ex
     let conditional = ConditionalExp {
         condition: Box::new(left),
         then,
-        els
+        els,
     };
-    
+
     Ok(Exp::Conditional(conditional))
 }
 
@@ -211,7 +214,7 @@ fn parse_exp_binary(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
 
 fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
     let mut left = parse_factor(cursor)?;
-    
+
     while let Some(next_token) = cursor.peek() {
         let prec = get_prec(next_token);
         if !next_token.is_binaryop() || prec < min_prec {
@@ -235,37 +238,51 @@ fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
             }
         }
     }
-    
+
     Ok(left)
 }
 
-fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
-    let third = cursor.peek_nth_or_error(2)?;
-    match third {
-        Token::Semicolon | Token::Assign => {
-            let vardec = parse_vardec(cursor)?;
-            Ok(Declaration::Var(vardec))
+fn parse_specifiers(cursor: &mut Cursor) -> Result<Option<StorageClass>> {
+    let mut types = Vec::new();
+    let mut storage_classes = Vec::new();
+    while let Some(token) = cursor.next_if(Token::is_specifier) {
+        match token {
+            Token::Int => types.push(token.clone()),
+            _ => storage_classes.push(token.clone()),
         }
-        Token::OpenParanth => {
-            let fundec = parse_fundec(cursor)?;
-            Ok(Declaration::Fun(fundec))
-        }
-        _ => Err(ParseError::UnexpectedToken(third.clone())),
     }
+
+    if types.len() != 1 {
+        return Err(ParseError::InvalidTypeSpecifiers(types));
+    }
+
+    if storage_classes.len() > 1 {
+        return Err(ParseError::InvalidStorageClass(storage_classes));
+    }
+
+    let mut storage_class = None;
+    if let Some(sc) = storage_classes.get(0) {
+        match sc {
+            Token::Extern => storage_class = Some(StorageClass::Extern),
+            Token::Static => storage_class = Some(StorageClass::Static),
+            _ => unreachable!(),
+        }
+    }
+    Ok(storage_class)
 }
 
 #[allow(clippy::single_match_else)]
 fn parse_forinit(cursor: &mut Cursor) -> Result<AstForInit> {
-    let next = cursor.peek_or_error()?;
-    match next {
-        Token::Int => {
-            let vardec = parse_vardec(cursor)?;
-            Ok(AstForInit::InitDecl(vardec))
+    let peek = cursor.peek_or_error()?;
+    if peek.is_specifier() {
+        let dec = parse_declaration(cursor)?;
+        match dec {
+            Declaration::Var(vardec) => Ok(AstForInit::InitDecl(vardec)),
+            _ => Err(ParseError::BadForInit),
         }
-        _ => {
-            let exp = parse_optional_exp(cursor, &Token::Semicolon)?;
-            Ok(AstForInit::InitExp(exp))
-        }
+    } else {
+        let exp = parse_optional_exp(cursor, &Token::Semicolon)?;
+        Ok(AstForInit::InitExp(exp))
     }
 }
 
@@ -315,7 +332,7 @@ fn parse_if(cursor: &mut Cursor) -> Result<Statement> {
         then,
         els,
     };
-    
+
     Ok(Statement::If(if_st))
 }
 
@@ -331,7 +348,7 @@ fn parse_while(cursor: &mut Cursor) -> Result<Statement> {
         body,
         label,
     };
-    
+
     Ok(Statement::While(while_st))
 }
 
@@ -347,9 +364,9 @@ fn parse_dowhile(cursor: &mut Cursor) -> Result<Statement> {
     let dowhile = DoWhile {
         body,
         condition,
-        label
+        label,
     };
-    
+
     Ok(Statement::DoWhile(dowhile))
 }
 
@@ -388,7 +405,7 @@ fn parse_switch(cursor: &mut Cursor) -> Result<Statement> {
         cases,
         label,
     };
-    
+
     Ok(Statement::Switch(switch))
 }
 
@@ -398,12 +415,8 @@ fn parse_case(cursor: &mut Cursor) -> Result<Statement> {
     cursor.expect(&Token::Colon)?;
     let body = parse_statement(cursor).map(Box::new)?;
     let label = String::new();
-    let cased_statement = CasedStatement {
-        exp,
-        body,
-        label
-    };
-    
+    let cased_statement = CasedStatement { exp, body, label };
+
     Ok(Statement::Cased(cased_statement))
 }
 
@@ -412,11 +425,8 @@ fn parse_default_case(cursor: &mut Cursor) -> Result<Statement> {
     cursor.expect(&Token::Colon)?;
     let body = parse_statement(cursor).map(Box::new)?;
     let label = String::new();
-    let dcs = DCasedStatement {
-        body,
-        label,
-    };
-    
+    let dcs = DCasedStatement { body, label };
+
     Ok(Statement::DCased(dcs))
 }
 
@@ -520,9 +530,7 @@ fn parse_factor_subexp(cursor: &mut Cursor) -> Result<Exp> {
 
     let peek = cursor.peek();
     match peek {
-        Some(Token::Increment | Token::Decrement) => {
-            parse_factor_postfixop(cursor, exp)
-        }
+        Some(Token::Increment | Token::Decrement) => parse_factor_postfixop(cursor, exp),
         _ => Ok(exp),
     }
 }
@@ -580,8 +588,8 @@ fn parse_statement(cursor: &mut Cursor) -> Result<Statement> {
 fn parse_block_item(cursor: &mut Cursor) -> Result<AstBlockItem> {
     let next = cursor.peek_or_error()?;
     match next {
-        Token::Int => Ok(AstBlockItem::D(parse_declaration(cursor)?)),
-        _ => Ok(AstBlockItem::S(parse_statement(cursor)?)),
+        t if t.is_specifier() => parse_declaration(cursor).map(AstBlockItem::D),
+        _ => parse_statement(cursor).map(AstBlockItem::S),
     }
 }
 
@@ -600,6 +608,22 @@ fn parse_block(cursor: &mut Cursor) -> Result<AstBlock> {
     Ok(AstBlock { items })
 }
 
+#[deprecated]
+fn parse_vardec(cursor: &mut Cursor) -> Result<VarDec> {
+    cursor.expect(&Token::Int)?;
+    let name = parse_identifier(cursor)?;
+    let assign = cursor.bump_if(&Token::Assign);
+    let init = assign.then(|| parse_exp(cursor, 0)).transpose()?;
+    cursor.expect(&Token::Semicolon)?;
+
+    Ok(VarDec {
+        name,
+        init,
+        storage_class: None,
+    })
+}
+
+#[deprecated]
 fn parse_fundec(cursor: &mut Cursor) -> Result<FunDec> {
     cursor.expect(&Token::Int)?;
     let name = parse_identifier(cursor)?;
@@ -611,16 +635,58 @@ fn parse_fundec(cursor: &mut Cursor) -> Result<FunDec> {
     let semicolon = cursor.bump_if(&Token::Semicolon);
     let body = (!semicolon).then(|| parse_block(cursor)).transpose()?;
 
-    Ok(FunDec { name, params, body })
+    Ok(FunDec {
+        name,
+        params,
+        body,
+        storage_class: None,
+    })
+}
+
+fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
+    let storage_class = parse_specifiers(cursor)?;
+    let name = parse_identifier(cursor)?;
+    dbg!(name.clone());
+    let next = cursor.next_or_error()?;
+
+    match next {
+        Token::Assign => {
+            let exp = parse_exp(cursor, 0)?;
+            cursor.expect(&Token::Semicolon)?;
+            Ok(Declaration::Var(VarDec {
+                init: Some(exp),
+                name,
+                storage_class,
+            }))
+        }
+        Token::Semicolon => Ok(Declaration::Var(VarDec {
+            init: None,
+            name,
+            storage_class,
+        })),
+        Token::OpenParanth => {
+            let params = parse_params(cursor)?;
+            cursor.expect(&Token::CloseParanth)?;
+            let has_body = !cursor.bump_if(&Token::Semicolon);
+            let body = has_body.then(|| parse_block(cursor)).transpose()?;
+            Ok(Declaration::Fun(FunDec {
+                name,
+                params,
+                storage_class,
+                body,
+            }))
+        }
+        _ => Err(ParseError::UnexpectedToken(next.clone())),
+    }
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Ast> {
-    let mut functions = Vec::new();
+    let mut declarations = Vec::new();
     let mut cursor = Cursor::new(tokens);
 
     while !cursor.at_end() {
-        let f = parse_fundec(&mut cursor)?;
-        functions.push(f);
+        let f = parse_declaration(&mut cursor)?;
+        declarations.push(f);
     }
-    Ok(Ast { functions })
+    Ok(Ast { declarations })
 }

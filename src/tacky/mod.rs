@@ -557,7 +557,12 @@ fn emit_block_items(blockitems: AstBlockItems) -> TInstructions {
 }
 
 fn emit_fundec(f: FunDec) -> Option<TFunction> {
-    let FunDec { name, params, body } = f;
+    let FunDec {
+        name,
+        params,
+        body,
+        storage_class,
+    } = f;
     if let Some(body) = body {
         let AstBlock { items } = body;
         let mut body = emit_block_items(items);
@@ -569,9 +574,19 @@ fn emit_fundec(f: FunDec) -> Option<TFunction> {
     }
 }
 
+fn emit_toplevel_dec(dec: Declaration) -> Option<TFunction> {
+    match dec {
+        Declaration::Fun(fundec) => emit_fundec(fundec),
+        Declaration::Var(_) => unimplemented!(),
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub fn emit_tacky(input: Ast) -> TAst {
-    let Ast { functions } = input;
-    let functions = functions.into_iter().filter_map(emit_fundec).collect();
+    let Ast { declarations } = input;
+    let functions = declarations
+        .into_iter()
+        .filter_map(emit_toplevel_dec)
+        .collect();
     TAst { functions }
 }

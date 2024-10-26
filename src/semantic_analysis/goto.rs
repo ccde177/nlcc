@@ -133,7 +133,14 @@ fn validate_fundec(fundec: &mut FunDec) -> Result<()> {
     Ok(())
 }
 
+fn validate_toplevel_dec(dec: &mut Declaration) -> Result<()> {
+    match dec {
+        Declaration::Var(_) => unimplemented!(),
+        Declaration::Fun(fundec) => validate_fundec(fundec),
+    }
+}
+
 pub fn ensure_goto_correctness(ast: &mut Ast) -> Result<()> {
-    let Ast { functions } = ast;
-    functions.iter_mut().try_for_each(validate_fundec)
+    let Ast { declarations } = ast;
+    declarations.iter_mut().try_for_each(validate_toplevel_dec)
 }

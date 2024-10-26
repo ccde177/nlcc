@@ -107,6 +107,11 @@ impl Token {
     }
 
     #[inline]
+    pub fn is_specifier(&self) -> bool {
+        matches!(self, Token::Int | Token::Extern | Token::Static)
+    }
+
+    #[inline]
     pub fn is_unaryop(&self) -> bool {
         matches!(
             self,

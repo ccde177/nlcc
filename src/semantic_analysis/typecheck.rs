@@ -1,18 +1,42 @@
 use crate::ast::*;
 use crate::semantic_analysis::{Result, SemAnalysisError};
 
+use std::any::Any;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum Type {
-    Int,
-    Fun { nargs: usize },
-}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SymTableEntry {
     sym_type: Type,
-    defined: bool,
+    attrs: IdAttr,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum InitValue {
+    Tentative,
+    Initial(u64),
+    NoInit,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum IdAttr {
+    Fun { defined: bool, global: bool },
+    Static { inti_val: InitValue, global: bool },
+    Local,
+}
+
+impl IdAttr {
+    pub fn is_fun_defined(&self) -> bool {
+        match self {
+            Self::Fun { global, .. } => *global,
+            _ => false,
+        }
+    }
+    pub fn is_global(&self) -> bool {
+        match self {
+            Self::Fun { global, .. } | Self::Static { global, .. } => *global,
+            _ => false,
+        }
+    }
 }
 
 pub type SymTable = HashMap<Identifier, SymTableEntry>;
@@ -196,29 +220,36 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
     };
     let has_body = fundec.body.is_some();
     let mut already_defined = false;
+    let global = fundec.storage_class != Some(StorageClass::Static);
 
     if let Some(old_dec) = sym_table.get(&fundec.name) {
         if old_dec.sym_type != fun_type {
             return Err(SemAnalysisError::IncompatibleFunDec(fundec.name));
         }
-        already_defined = old_dec.defined;
+        already_defined = old_dec.attrs.is_fun_defined();
         if has_body && already_defined {
             return Err(SemAnalysisError::FunctionRedefinition(fundec.name));
         }
     }
 
+    let attrs = IdAttr::Fun {
+        defined: already_defined || has_body,
+        global,
+    };
+
     let entry = SymTableEntry {
         sym_type: fun_type,
-        defined: already_defined || has_body,
+        attrs,
     };
 
     sym_table.insert(fundec.name.clone(), entry);
 
     if has_body {
         for param in &fundec.params {
+            let attrs = IdAttr::Local;
             let entry = SymTableEntry {
                 sym_type: Type::Int,
-                defined: true,
+                attrs,
             };
             sym_table.insert(param.clone(), entry);
         }
@@ -232,6 +263,7 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
         name: fundec.name,
         body: typechecked_body,
         params: fundec.params,
+        storage_class: fundec.storage_class,
     };
 
     Ok(typechecked)
@@ -250,6 +282,7 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
     Ok(VarDec {
         name: vardec.name,
         init,
+        storage_class: vardec.storage_class,
     })
 }
 
@@ -277,16 +310,57 @@ fn typecheck_block(block: AstBlock, sym_table: &mut SymTable) -> Result<AstBlock
     Ok(AstBlock { items })
 }
 
+fn get_const_init(init: Exp) -> Result<InitValue> {
+    if let Exp::Constant(i) = init {
+        Ok(InitValue::Initial(i))
+    } else {
+        Err(SemAnalysisError::NonConstantInit(vardec.name.clone()))
+    }
+}
+
+pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
+    let mut init_value = InitValue::NoInit;
+    if let Some(init_exp) = vardec.init {
+        init_value = get_const_init(init_exp)?;
+    } else if vardec.storage_class != Some(StorageClass::Extern) {
+        init_value = InitValue::Tentative;
+    }
+
+    let mut global = !matches!(vardec.storage_class, Some(StorageClass::Static));
+    if let Some(old_dec) = sym_table.get(&vardec.name) {
+        if old_dec.sym_type != Type::Int {
+            return Err(SemAnalysisError::FunctionRedefinition(vardec.name.clone()));
+        }
+        if vardec.storage_class == Some(StorageClass::Extern) {
+            global = old_dec.attrs.is_global();
+        } else if old_dec.attrs.is_global() != global {
+            return Err(SemAnalysisError::ConflictingLinkage(vardec.name.clone()));
+        }
+    }
+    todo!()
+}
+
+pub fn typecheck_toplevel_dec(dec: Declaration, sym_table: &mut SymTable) -> Result<Declaration> {
+    match dec {
+        Declaration::Fun(fundec) => typecheck_fundec(fundec, sym_table).map(Declaration::Fun),
+        Declaration::Var(_) => unimplemented!(),
+    }
+}
+
 pub fn check_types(ast: Ast) -> Result<(Ast, SymTable)> {
     let mut sym_table = SymTable::new();
-    let Ast { functions } = ast;
+    let Ast {
+        declarations: functions,
+    } = ast;
 
     let functions = functions
         .into_iter()
-        .map(|fundec| typecheck_fundec(fundec, &mut sym_table))
+        .map(|dec| typecheck_toplevel_dec(dec, &mut sym_table))
         .collect::<Result<Vec<_>>>()?;
 
-    let ast = Ast { functions };
+    let ast = Ast {
+        declarations: functions,
+    };
 
     Ok((ast, sym_table))
 }

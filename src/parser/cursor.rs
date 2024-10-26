@@ -4,14 +4,14 @@ use crate::parser::{ParseError, Result};
 #[derive(Debug)]
 pub struct Cursor<'a> {
     tokens: &'a [Token],
-    position: usize
+    position: usize,
 }
 
 impl<'a> Cursor<'a> {
     pub fn new(tokens: &'a [Token]) -> Self {
         Self {
             tokens,
-            position: 0
+            position: 0,
         }
     }
 
@@ -30,13 +30,21 @@ impl<'a> Cursor<'a> {
         }
         condition
     }
-    
+
     pub fn at_end(&self) -> bool {
         self.position >= self.tokens.len()
     }
 
     pub fn peek_nth(&self, n: usize) -> Option<&Token> {
         self.tokens.get(self.position + n)
+    }
+
+    pub fn next_if(&mut self, p: impl FnOnce(&Token) -> bool) -> Option<&Token> {
+        let current = self.tokens.get(self.position).filter(|&x| p(x));
+        if current.is_some() {
+            self.position += 1;
+        }
+        current
     }
 
     pub fn expect(&mut self, t: &Token) -> Result<()> {
@@ -49,13 +57,11 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn peek_nth_or_error(&self, n: usize) -> Result<&Token> {
-        self.peek_nth(n)
-            .ok_or(ParseError::UnexpectedEof)
+        self.peek_nth(n).ok_or(ParseError::UnexpectedEof)
     }
 
     pub fn peek_or_error(&mut self) -> Result<&Token> {
-        self.peek()
-            .ok_or(ParseError::UnexpectedEof)
+        self.peek().ok_or(ParseError::UnexpectedEof)
     }
 
     pub fn next_or_error(&mut self) -> Result<&Token> {

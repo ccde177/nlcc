@@ -204,14 +204,25 @@ fn label_fundec(mut fundec: FunDec, ng: &mut NameGenerator) -> Result<FunDec> {
     Ok(fundec)
 }
 
+fn label_toplevel_dec(dec: Declaration, ng: &mut NameGenerator) -> Result<Declaration> {
+    match dec {
+        Declaration::Var(_) => unimplemented!(),
+        Declaration::Fun(fundec) => label_fundec(fundec, ng).map(Declaration::Fun),
+    }
+}
+
 pub fn label_loops(ast: Ast) -> Result<Ast> {
-    let Ast { functions } = ast;
+    let Ast {
+        declarations: functions,
+    } = ast;
 
     let mut ng = NameGenerator::new();
     let functions = functions
         .into_iter()
-        .map(|fundec| label_fundec(fundec, &mut ng))
+        .map(|dec| label_toplevel_dec(dec, &mut ng))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(Ast { functions })
+    Ok(Ast {
+        declarations: functions,
+    })
 }

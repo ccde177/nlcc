@@ -35,11 +35,16 @@ pub enum SemAnalysisError {
     VariableCall(Identifier),
     ExpectedArgsCountButGot(usize, usize, String),
     FunctionNameAsVariable(Identifier),
+    NonConstantInit(Identifier),
+    ConflictingLinkage(String),
 }
 
 impl fmt::Display for SemAnalysisError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::NonConstantInit(name) => {
+                write!(f, "Global variable {name} has non-constant initializer")
+            }
             Self::IdentifierRedeclaration(id) => write!(f, "Redeclaration of a identifier {id}"),
             Self::LocalFunDefinition(name) => {
                 write!(f, "Attempt to define function{name} in local local context")
