@@ -610,9 +610,10 @@ fn emit_toplevel_dec(dec: Declaration) -> Option<TopLevelItem> {
 fn emit_static_symbols() -> Vec<TopLevelItem> {
     let mut defs = Vec::new();
     for symbol in SYM_TABLE.get_keys() {
-        if let Some(init) = SYM_TABLE.get_symbol_init(symbol) {
+        let entry = SYM_TABLE.get_symbol(symbol).expect("Should always be Some");
+        if let Some(init) = entry.get_init() {
             let name = symbol.to_owned();
-            let global = SYM_TABLE.is_sym_global(symbol);
+            let global = entry.is_global();
             let staticvar = StaticVariable { name, global, init };
             defs.push(TopLevelItem::Var(staticvar));
         }

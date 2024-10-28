@@ -35,22 +35,6 @@ impl GlobalSymTable {
         self.inner.get().and_then(|st| st.get(sym))
     }
 
-    pub fn is_sym_global(&self, sym: &str) -> bool {
-        self.inner
-            .get()
-            .and_then(|st| st.get(sym))
-            .filter(|entry| entry.attrs.is_global())
-            .is_some()
-    }
-
-    pub fn get_symbol_init(&self, sym: &str) -> Option<i64> {
-        self.inner
-            .get()
-            .and_then(|st| st.get(sym))
-            .and_then(|entry| entry.attrs.get_init())
-            .and_then(|iv| iv.get_tacky_init())
-    }
-
     pub fn is_sym_static(&self, sym: &str) -> bool {
         self.inner
             .get()
@@ -69,6 +53,10 @@ pub struct SymTableEntry {
 impl SymTableEntry {
     pub fn is_global(&self) -> bool {
         self.attrs.is_global()
+    }
+
+    pub fn get_init(&self) -> Option<i64> {
+        self.attrs.get_init().and_then(|iv| iv.get_tacky_init())
     }
 }
 
