@@ -20,8 +20,18 @@ use args::Args;
 use std::fs;
 use std::process::Command;
 
-fn main() -> anyhow::Result<()> {
+use anyhow::{anyhow, Result};
+
+fn main() -> Result<()> {
     let args = Args::parse();
+
+    let file_exist = fs::exists(&args.input)?;
+
+    if !file_exist {
+        let err_msg = format!("File {} does not exist", args.input.to_string_lossy());
+        return Err(anyhow!(err_msg));
+    }
+
     let mut preprocessed = args.input.clone();
     preprocessed.set_extension("i");
 
@@ -33,7 +43,7 @@ fn main() -> anyhow::Result<()> {
         .arg(&preprocessed)
         .status()?;
     if !status.success() {
-        return Err(anyhow::anyhow!("Failed to run preprocessor"));
+        return Err(anyhow!("Failed to run preprocessor"));
     }
 
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
