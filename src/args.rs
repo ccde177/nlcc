@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::exit;
 
 #[allow(clippy::struct_excessive_bools)]
+#[derive(Default)]
 pub struct Args {
     pub lex: bool,
     pub parse: bool,
@@ -16,47 +17,31 @@ pub struct Args {
 
 impl Args {
     pub fn parse() -> Self {
-        let args = env::args();
+        let env_args = env::args();
+        let mut args = Self::default();
+        let mut input_file = None;
 
-        let mut lex = false;
-        let mut parse = false;
-        let mut tacky = false;
-        let mut codegen = false;
-        let mut validate = false;
-        let mut no_link = false;
-        let mut no_assemble = false;
-        let mut input = None;
-
-        for arg in args.skip(1) {
+        for arg in env_args.skip(1) {
             match arg.as_str() {
-                "-c" | "--no-link" => no_link = true,
-                "-S" | "--no-assemble" => no_assemble = true,
-                "--lex" => lex = true,
-                "--parse" => parse = true,
-                "--tacky" => tacky = true,
-                "--codegen" => codegen = true,
-                "--validate" => validate = true,
+                "-c" | "--no-link" => args.no_link = true,
+                "-S" | "--no-assemble" => args.no_assemble = true,
+                "--lex" => args.lex = true,
+                "--parse" => args.parse = true,
+                "--tacky" => args.tacky = true,
+                "--codegen" => args.codegen = true,
+                "--validate" => args.validate = true,
                 "-h" | "--help" => Self::usage(),
                 _ => {
-                    if input.is_some() {
+                    if input_file.is_some() {
                         Self::usage();
                     }
                     let file = PathBuf::from(arg);
-                    input = Some(file);
+                    input_file = Some(file);
                 }
             }
         }
-        let input = input.unwrap_or_else(|| Self::usage());
-        Self {
-            lex,
-            parse,
-            tacky,
-            codegen,
-            validate,
-            no_link,
-            no_assemble,
-            input,
-        }
+        args.input = input_file.unwrap_or_else(|| Self::usage());
+        args
     }
 
     #[allow(clippy::items_after_statements)]
