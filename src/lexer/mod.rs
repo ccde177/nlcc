@@ -328,9 +328,9 @@ fn lex_identifier(cursor: &mut Cursor) -> Token {
 pub fn lex(input: &str) -> Result<Tokens> {
     let mut tokens = Tokens::with_capacity(input.len());
     let mut cursor = Cursor::new(input);
+    cursor.skip_whitespaces();
 
     while let Some(next) = cursor.peek() {
-        cursor.skip_whitespaces();
         match next {
             ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' | ',' => {
                 let token = Token::try_from(next).expect("Should never fail");
@@ -351,6 +351,7 @@ pub fn lex(input: &str) -> Result<Tokens> {
             }
             _ => return Err(LexError::UnexpectedChar(next)),
         }
+        cursor.skip_whitespaces();
     }
     Ok(tokens)
 }

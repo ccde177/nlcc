@@ -23,10 +23,17 @@ impl<'a> Cursor<'a> {
         chars.next()
     }
 
-    pub fn skip_whitespaces(&mut self) {
-        while self.peek().filter(|c| c.is_whitespace()).is_some() {
+    #[inline]
+    pub fn skip_if(&mut self, p: impl FnOnce(char) -> bool) -> bool {
+        let skipped = self.peek().filter(|&c| p(c)).is_some();
+        if skipped {
             self.take();
         }
+        skipped
+    }
+
+    pub fn skip_whitespaces(&mut self) {
+        while self.skip_if(char::is_whitespace) {}
     }
 
     pub fn take(&mut self) -> Option<char> {
