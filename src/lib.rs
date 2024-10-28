@@ -1,3 +1,11 @@
+#![deny(unused_must_use)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::wildcard_imports)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
+
 pub mod ast;
 pub mod codegen;
 pub mod emission;

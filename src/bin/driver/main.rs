@@ -1,10 +1,3 @@
-#![deny(unused_must_use)]
-#![warn(clippy::pedantic)]
-#![allow(clippy::wildcard_imports)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_wrap)]
 mod args;
 mod driver_error;
 
@@ -24,7 +17,7 @@ pub fn main() -> Result<(), BoxedError> {
 
     if !file_exists {
         let filename = args.input.to_string_lossy().to_string();
-        let err = DriverError::InputFileDoesNotExists(filename);
+        let err = DriverError::InputFileDoesNotExist(filename);
         Err(err)?;
     }
 
