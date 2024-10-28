@@ -2,6 +2,8 @@
 mod tacky_tests;
 
 use crate::ast::*;
+use crate::semantic_analysis::{IdAttr, SYM_TABLE};
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type Identifier = String;
@@ -9,7 +11,7 @@ pub type TInstructions = Vec<TInstruction>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TAst {
-    pub functions: Vec<TFunction>,
+    pub toplevel_items: Vec<TopLevelItem>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -17,6 +19,20 @@ pub struct TFunction {
     pub name: Identifier,
     pub params: Vec<Identifier>,
     pub body: TInstructions,
+    pub global: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct StaticVariable {
+    pub name: Identifier,
+    pub global: bool,
+    pub init: i64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum TopLevelItem {
+    Fun(TFunction),
+    Var(StaticVariable),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -536,6 +552,9 @@ fn emit_statement(statement: Statement, instructions: &mut TInstructions) {
 }
 
 fn emit_vardec(vardec: VarDec, instructions: &mut TInstructions) {
+    if vardec.storage_class.is_some() {
+        return;
+    }
     if let Some(init) = vardec.init {
         let rhs = emit_expression(init, instructions);
         let var = TValue::Var(vardec.name);
@@ -561,32 +580,63 @@ fn emit_fundec(f: FunDec) -> Option<TFunction> {
         name,
         params,
         body,
-        storage_class,
+        storage_class: _,
     } = f;
     if let Some(body) = body {
         let AstBlock { items } = body;
         let mut body = emit_block_items(items);
         body.push(TInstruction::Return(TValue::Constant(0)));
-        let f = TFunction { name, params, body };
+
+        let st_entry = SYM_TABLE.get_symbol(&name).expect("Should never fail");
+        let f = TFunction {
+            name,
+            params,
+            body,
+            global: st_entry.is_global(),
+        };
         Some(f)
     } else {
         None
     }
 }
 
-fn emit_toplevel_dec(dec: Declaration) -> Option<TFunction> {
+fn emit_toplevel_dec(dec: Declaration) -> Option<TopLevelItem> {
     match dec {
-        Declaration::Fun(fundec) => emit_fundec(fundec),
-        Declaration::Var(_) => unimplemented!(),
+        Declaration::Fun(fundec) => emit_fundec(fundec).map(TopLevelItem::Fun),
+        Declaration::Var(_) => None,
     }
+}
+
+fn emit_static_symbols() -> Vec<TopLevelItem> {
+    let mut defs = Vec::new();
+    for symbol in SYM_TABLE.get_keys() {
+        let entry = SYM_TABLE.get_symbol(&symbol).expect("Is alwyas some");
+        match entry.attrs {
+            IdAttr::Static { init_val, global } => {
+                if let Some(init) = init_val.get_tacky_init() {
+                    let staticvar = StaticVariable {
+                        name: symbol,
+                        global,
+                        init,
+                    };
+                    defs.push(TopLevelItem::Var(staticvar));
+                }
+            }
+            _ => continue,
+        }
+    }
+    defs
 }
 
 #[allow(clippy::module_name_repetitions)]
 pub fn emit_tacky(input: Ast) -> TAst {
     let Ast { declarations } = input;
-    let functions = declarations
+    let mut toplevel_items: Vec<TopLevelItem> = declarations
         .into_iter()
         .filter_map(emit_toplevel_dec)
         .collect();
-    TAst { functions }
+
+    let mut static_symbols = emit_static_symbols();
+    toplevel_items.append(&mut static_symbols);
+    TAst { toplevel_items }
 }

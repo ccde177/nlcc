@@ -135,7 +135,7 @@ fn validate_fundec(fundec: &mut FunDec) -> Result<()> {
 
 fn validate_toplevel_dec(dec: &mut Declaration) -> Result<()> {
     match dec {
-        Declaration::Var(_) => unimplemented!(),
+        Declaration::Var(_) => Ok(()),
         Declaration::Fun(fundec) => validate_fundec(fundec),
     }
 }

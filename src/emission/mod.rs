@@ -24,6 +24,7 @@ impl fmt::Display for Operand {
             Self::Imm(i) => write!(f, "${i}"),
             Self::Reg(r) => write!(f, "{r}"),
             Self::Stack(i) => write!(f, "{i}(%rbp)"),
+            Self::Data(name) => write!(f, "{name}(%rip)"),
             Self::Pseudo(_) => unreachable!(),
         }
     }
@@ -56,7 +57,10 @@ impl fmt::Display for BinaryOp {
 #[cfg(target_os = "linux")]
 impl fmt::Display for AsmFunction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "\t.globl {}", self.name)?;
+        if self.global {
+            writeln!(f, "\t.globl {}", self.name)?;
+        }
+        writeln!(f, ".text")?;
         writeln!(f, "{}:", self.name)?;
         //Prologue:
         writeln!(f, "\tpushq %rbp")?;
@@ -69,10 +73,41 @@ impl fmt::Display for AsmFunction {
     }
 }
 
+impl fmt::Display for AsmStaticVar {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let AsmStaticVar { name, global, init } = self;
+        let (section, init) = if *init == 0 {
+            let bss = String::from(".bss");
+            let zero = String::from(".zero 4");
+            (bss, zero)
+        } else {
+            let data = String::from(".data");
+            let init = format!(".long {init}");
+            (data, init)
+        };
+        if *global {
+            writeln!(f, "\t.globl {name}")?;
+        };
+        writeln!(f, "\t{section}")?;
+        writeln!(f, "\t.align 4")?;
+        writeln!(f, "{name}:")?;
+        writeln!(f, "\t{init}")
+    }
+}
+
+impl fmt::Display for AsmTopLevelItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Fun(fun) => write!(f, "{fun}"),
+            Self::StaticVar(staticvar) => write!(f, "{staticvar}"),
+        }
+    }
+}
+
 impl fmt::Display for AsmAst {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for function in &self.functions {
-            write!(f, "{function}")?;
+        for asm_toplevel_item in &self.functions {
+            write!(f, "{asm_toplevel_item}")?;
         }
         writeln!(f, ".section .note.GNU-stak,\"\",@progbits")
     }

@@ -1,20 +1,35 @@
-use crate::tacky::{TAst, TBinaryOp, TFunction, TInstruction, TInstructions, TUnaryOp, TValue};
+use crate::semantic_analysis::SYM_TABLE;
+use crate::tacky::*;
 
 use std::collections::HashMap;
 use std::iter::successors;
 
 #[derive(Debug)]
 pub struct AsmAst {
-    pub functions: Vec<AsmFunction>,
+    pub functions: Vec<AsmTopLevelItem>,
 }
 
 pub type AsmInstructions = Vec<AsmInstruction>;
 pub type Identifier = String;
 
 #[derive(Debug)]
+pub enum AsmTopLevelItem {
+    Fun(AsmFunction),
+    StaticVar(AsmStaticVar),
+}
+
+#[derive(Debug)]
+pub struct AsmStaticVar {
+    pub name: Identifier,
+    pub global: bool,
+    pub init: i64,
+}
+
+#[derive(Debug)]
 pub struct AsmFunction {
     pub name: String,
     pub body: AsmInstructions,
+    pub global: bool,
 }
 
 #[derive(Debug)]
@@ -58,6 +73,7 @@ pub enum Operand {
     Reg(Register),
     Pseudo(Identifier),
     Stack(i64),
+    Data(Identifier),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -108,7 +124,10 @@ impl AsmInstruction {
     }
 
     fn is_mul_sndmem(&self) -> bool {
-        matches!(self, Self::Binary(BinaryOp::Imul, _, Operand::Stack(_)))
+        matches!(
+            self,
+            Self::Binary(BinaryOp::Imul, _, Operand::Stack(_) | Operand::Data(_))
+        )
     }
 
     fn is_idiv_constant(&self) -> bool {
@@ -118,7 +137,7 @@ impl AsmInstruction {
 
 impl Operand {
     fn is_mem(&self) -> bool {
-        matches!(self, Self::Stack(_))
+        matches!(self, Self::Stack(_) | Self::Data(_))
     }
 
     pub fn is_reg(&self) -> bool {
@@ -155,19 +174,23 @@ impl StackAllocator {
 
     fn allocate_if_pseudo(&mut self, operand: Operand) -> Operand {
         match operand {
-            Operand::Pseudo(name) => {
-                let offset = self.allocate(name);
-                Operand::Stack(offset)
-            }
+            Operand::Pseudo(name) => self.allocate(name),
             _ => operand,
         }
     }
 
-    fn allocate(&mut self, name: Identifier) -> i64 {
-        *self.map.entry(name).or_insert_with(|| {
-            self.offset += 4;
-            -self.offset
-        })
+    fn allocate(&mut self, name: Identifier) -> Operand {
+        if let Some(entry) = self.map.get(&name) {
+            return Operand::Stack(*entry);
+        }
+
+        if SYM_TABLE.sym_is_static(&name) {
+            return Operand::Data(name);
+        }
+
+        self.offset += 4;
+        self.map.insert(name, -self.offset);
+        Operand::Stack(-self.offset)
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -568,7 +591,12 @@ fn fix_instructions(instructions: &mut AsmInstructions) {
 }
 
 fn gen_fundef(f: TFunction) -> AsmFunction {
-    let TFunction { name, params, body } = f;
+    let TFunction {
+        name,
+        params,
+        body,
+        global,
+    } = f;
 
     let nparams = params.len();
     let params = params.into_iter().map(Operand::Pseudo);
@@ -597,11 +625,25 @@ fn gen_fundef(f: TFunction) -> AsmFunction {
     AsmFunction {
         name,
         body: instructions,
+        global,
+    }
+}
+
+#[inline]
+fn gen_staticvar(staticvar: StaticVariable) -> AsmStaticVar {
+    let StaticVariable { name, global, init } = staticvar;
+    AsmStaticVar { name, global, init }
+}
+
+fn gen_toplevel_item(item: TopLevelItem) -> AsmTopLevelItem {
+    match item {
+        TopLevelItem::Fun(tfun) => AsmTopLevelItem::Fun(gen_fundef(tfun)),
+        TopLevelItem::Var(staticvar) => AsmTopLevelItem::StaticVar(gen_staticvar(staticvar)),
     }
 }
 
 pub fn codegen(ast: TAst) -> AsmAst {
-    let TAst { functions } = ast;
-    let functions = functions.into_iter().map(gen_fundef).collect();
+    let TAst { toplevel_items } = ast;
+    let functions = toplevel_items.into_iter().map(gen_toplevel_item).collect();
     AsmAst { functions }
 }

@@ -646,7 +646,6 @@ fn parse_fundec(cursor: &mut Cursor) -> Result<FunDec> {
 fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
     let storage_class = parse_specifiers(cursor)?;
     let name = parse_identifier(cursor)?;
-    dbg!(name.clone());
     let next = cursor.next_or_error()?;
 
     match next {

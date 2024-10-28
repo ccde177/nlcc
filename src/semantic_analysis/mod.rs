@@ -12,6 +12,8 @@ use name_resolution::name_resolution;
 use std::fmt;
 use typecheck::check_types;
 
+pub use typecheck::{IdAttr, SYM_TABLE};
+
 pub type Result<T> = std::result::Result<T, SemAnalysisError>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,11 +39,25 @@ pub enum SemAnalysisError {
     FunctionNameAsVariable(Identifier),
     NonConstantInit(Identifier),
     ConflictingLinkage(String),
+    InitOnExternVar(String),
+    StorageIdInForInit(String),
+    StaticFunctionRedeclaredNonStatic(String),
 }
 
 impl fmt::Display for SemAnalysisError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::StaticFunctionRedeclaredNonStatic(name) => {
+                write!(f, "Static function {name} redeclared ad non-static")
+            }
+            Self::StorageIdInForInit(name) => write!(
+                f,
+                "Variable {name} has storage keyword in a for loop init expression"
+            ),
+            Self::ConflictingLinkage(name) => {
+                write!(f, "Conflicting linkage for identifier {name}")
+            }
+            Self::InitOnExternVar(name) => write!(f, "Extern variable {name} has initializer"),
             Self::NonConstantInit(name) => {
                 write!(f, "Global variable {name} has non-constant initializer")
             }
@@ -84,7 +100,7 @@ pub fn validate(ast: Ast) -> Result<Ast> {
         .and_then(label_loops)
         .and_then(collect_cases)?;
     ensure_goto_correctness(&mut validated)?;
-    let (type_checked, _sym_table) = check_types(validated)?;
+    let type_checked = check_types(validated)?;
 
     Ok(type_checked)
 }

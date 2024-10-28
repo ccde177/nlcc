@@ -206,7 +206,7 @@ fn label_fundec(mut fundec: FunDec, ng: &mut NameGenerator) -> Result<FunDec> {
 
 fn label_toplevel_dec(dec: Declaration, ng: &mut NameGenerator) -> Result<Declaration> {
     match dec {
-        Declaration::Var(_) => unimplemented!(),
+        Declaration::Var(_) => Ok(dec),
         Declaration::Fun(fundec) => label_fundec(fundec, ng).map(Declaration::Fun),
     }
 }
