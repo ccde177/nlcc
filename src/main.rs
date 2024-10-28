@@ -25,9 +25,9 @@ use anyhow::{anyhow, Result};
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let file_exist = fs::exists(&args.input)?;
+    let file_exists = fs::exists(&args.input)?;
 
-    if !file_exist {
+    if !file_exists {
         let err_msg = format!("File {} does not exist", args.input.to_string_lossy());
         return Err(anyhow!(err_msg));
     }
