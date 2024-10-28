@@ -22,15 +22,36 @@ impl GlobalSymTable {
         self.inner.set(table).expect("Should only be called once");
     }
 
-    pub fn get_keys(&self) -> Vec<&String> {
-        self.inner.get().unwrap().keys().collect()
+    pub fn get_keys(&self) -> Vec<&str> {
+        self.inner
+            .get()
+            .expect("Always initialized at this point")
+            .keys()
+            .map(String::as_str)
+            .collect()
     }
 
     pub fn get_symbol(&self, sym: &str) -> Option<&SymTableEntry> {
         self.inner.get().and_then(|st| st.get(sym))
     }
 
-    pub fn sym_is_static(&self, sym: &str) -> bool {
+    pub fn is_sym_global(&self, sym: &str) -> bool {
+        self.inner
+            .get()
+            .and_then(|st| st.get(sym))
+            .filter(|entry| entry.attrs.is_global())
+            .is_some()
+    }
+
+    pub fn get_symbol_init(&self, sym: &str) -> Option<i64> {
+        self.inner
+            .get()
+            .and_then(|st| st.get(sym))
+            .and_then(|entry| entry.attrs.get_init())
+            .and_then(|iv| iv.get_tacky_init())
+    }
+
+    pub fn is_sym_static(&self, sym: &str) -> bool {
         self.inner
             .get()
             .and_then(|st| st.get(sym))

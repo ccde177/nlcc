@@ -2,7 +2,7 @@
 mod tacky_tests;
 
 use crate::ast::*;
-use crate::semantic_analysis::{IdAttr, SYM_TABLE};
+use crate::semantic_analysis::SYM_TABLE;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -610,19 +610,11 @@ fn emit_toplevel_dec(dec: Declaration) -> Option<TopLevelItem> {
 fn emit_static_symbols() -> Vec<TopLevelItem> {
     let mut defs = Vec::new();
     for symbol in SYM_TABLE.get_keys() {
-        let entry = SYM_TABLE.get_symbol(symbol).expect("Is alwyas some");
-        match entry.attrs {
-            IdAttr::Static { init_val, global } => {
-                if let Some(init) = init_val.get_tacky_init() {
-                    let staticvar = StaticVariable {
-                        name: symbol.to_owned(),
-                        global,
-                        init,
-                    };
-                    defs.push(TopLevelItem::Var(staticvar));
-                }
-            }
-            _ => continue,
+        if let Some(init) = SYM_TABLE.get_symbol_init(symbol) {
+            let name = symbol.to_owned();
+            let global = SYM_TABLE.is_sym_global(symbol);
+            let staticvar = StaticVariable { name, global, init };
+            defs.push(TopLevelItem::Var(staticvar));
         }
     }
     defs

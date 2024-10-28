@@ -12,7 +12,7 @@ use name_resolution::name_resolution;
 use std::fmt;
 use typecheck::check_types;
 
-pub use typecheck::{IdAttr, SYM_TABLE};
+pub use typecheck::SYM_TABLE;
 
 pub type Result<T> = std::result::Result<T, SemAnalysisError>;
 

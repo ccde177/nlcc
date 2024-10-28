@@ -184,7 +184,7 @@ impl StackAllocator {
             return Operand::Stack(*entry);
         }
 
-        if SYM_TABLE.sym_is_static(&name) {
+        if SYM_TABLE.is_sym_static(&name) {
             return Operand::Data(name);
         }
 
