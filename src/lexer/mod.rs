@@ -325,7 +325,6 @@ fn lex_identifier(cursor: &mut Cursor) -> Token {
     Token::from(&start[..count])
 }
 
-#[allow(clippy::needless_pass_by_value)]
 pub fn lex(input: &str) -> Result<Tokens> {
     let mut tokens = Tokens::with_capacity(input.len());
     let mut cursor = Cursor::new(input);
