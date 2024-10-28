@@ -9,6 +9,7 @@
 mod args;
 mod ast;
 mod codegen;
+mod driver_error;
 mod emission;
 mod lexer;
 mod parser;
@@ -16,20 +17,22 @@ mod semantic_analysis;
 mod tacky;
 
 use args::Args;
+use driver_error::DriverError;
 
 use std::fs;
 use std::process::Command;
 
-use anyhow::{anyhow, Result};
+type BoxedError = Box<dyn std::error::Error>;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), BoxedError> {
     let args = Args::parse();
 
     let file_exists = fs::exists(&args.input)?;
 
     if !file_exists {
-        let err_msg = format!("File {} does not exist", args.input.to_string_lossy());
-        return Err(anyhow!(err_msg));
+        let filename = args.input.to_string_lossy().to_string();
+        let err = DriverError::InputFileDoesNotExists(filename);
+        Err(err)?;
     }
 
     let mut preprocessed = args.input.clone();
@@ -43,7 +46,8 @@ fn main() -> Result<()> {
         .arg(&preprocessed)
         .status()?;
     if !status.success() {
-        return Err(anyhow!("Failed to run preprocessor"));
+        let err = DriverError::PreprocessorFailed;
+        Err(err)?;
     }
 
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
@@ -105,7 +109,8 @@ fn main() -> Result<()> {
         .status()?;
 
     if !status.success() {
-        return Err(anyhow::anyhow!("Failed to run assembler"));
+        let err = DriverError::AssemblerFailed;
+        Err(err)?;
     }
 
     fs::remove_file(asm_file)?;
