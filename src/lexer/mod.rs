@@ -331,11 +331,8 @@ pub fn lex(input: &str) -> Result<Tokens> {
     let mut cursor = Cursor::new(input);
 
     while let Some(next) = cursor.peek() {
+        cursor.skip_whitespaces();
         match next {
-            // Should be at the top because it is faster that way(~17%). Benched with criterion.
-            c if c.is_whitespace() => {
-                cursor.take();
-            }
             ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' | ',' => {
                 let token = Token::try_from(next).expect("Should never fail");
                 tokens.push(token);

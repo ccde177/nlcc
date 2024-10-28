@@ -8,9 +8,7 @@ pub struct Cursor<'a> {
 impl<'a> Cursor<'a> {
     pub fn new(s: &'a str) -> Self {
         let chars = s.chars();
-        Self {
-            chars
-        }
+        Self { chars }
     }
 
     pub fn peek(&self) -> Option<char> {
@@ -23,6 +21,12 @@ impl<'a> Cursor<'a> {
         //faster than .nth(1)
         chars.next();
         chars.next()
+    }
+
+    pub fn skip_whitespaces(&mut self) {
+        while self.peek().filter(|c| c.is_whitespace()).is_some() {
+            self.take();
+        }
     }
 
     pub fn take(&mut self) -> Option<char> {
