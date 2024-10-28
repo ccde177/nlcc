@@ -5,26 +5,19 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_possible_wrap)]
-
 mod args;
-mod ast;
-mod codegen;
 mod driver_error;
-mod emission;
-mod lexer;
-mod parser;
-mod semantic_analysis;
-mod tacky;
 
 use args::Args;
 use driver_error::DriverError;
+use nlcc::{codegen, lexer, parser, semantic_analysis, tacky};
 
 use std::fs;
 use std::process::Command;
 
 type BoxedError = Box<dyn std::error::Error>;
 
-fn main() -> Result<(), BoxedError> {
+pub fn main() -> Result<(), BoxedError> {
     let args = Args::parse();
 
     let file_exists = fs::exists(&args.input)?;

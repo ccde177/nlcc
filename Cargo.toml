@@ -1,4 +1,12 @@
 [package]
-name = "driver"
+name = "nlcc"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "nlcc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nlcc"
+path = "src/bin/driver/main.rs"
