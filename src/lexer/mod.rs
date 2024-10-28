@@ -246,7 +246,7 @@ fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
 
     if eq.is_some() {
         let second = second.expect("Is always Some");
-        let third = eq.expect("Is alwyas Some");
+        let third = eq.expect("Is always Some");
         let result = lex_mcharop3(first, second, third);
         if result.is_ok() {
             cursor.take();
