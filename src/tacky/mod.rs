@@ -610,12 +610,12 @@ fn emit_toplevel_dec(dec: Declaration) -> Option<TopLevelItem> {
 fn emit_static_symbols() -> Vec<TopLevelItem> {
     let mut defs = Vec::new();
     for symbol in SYM_TABLE.get_keys() {
-        let entry = SYM_TABLE.get_symbol(&symbol).expect("Is alwyas some");
+        let entry = SYM_TABLE.get_symbol(symbol).expect("Is alwyas some");
         match entry.attrs {
             IdAttr::Static { init_val, global } => {
                 if let Some(init) = init_val.get_tacky_init() {
                     let staticvar = StaticVariable {
-                        name: symbol,
+                        name: symbol.to_owned(),
                         global,
                         init,
                     };

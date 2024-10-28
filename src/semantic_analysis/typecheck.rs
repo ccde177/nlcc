@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::iter::IntoIterator;
 use std::sync::OnceLock;
 
+// Global read-only symbol table
 pub static SYM_TABLE: GlobalSymTable = GlobalSymTable::new();
 pub struct GlobalSymTable {
     inner: OnceLock<SymTable>,
@@ -21,9 +22,8 @@ impl GlobalSymTable {
         self.inner.set(table).expect("Should only be called once");
     }
 
-    pub fn get_keys(&self) -> Vec<String> {
-        //TODO: no cloning
-        self.inner.get().unwrap().keys().cloned().collect()
+    pub fn get_keys(&self) -> Vec<&String> {
+        self.inner.get().unwrap().keys().collect()
     }
 
     pub fn get_symbol(&self, sym: &str) -> Option<&SymTableEntry> {
@@ -67,7 +67,7 @@ impl InitValue {
         match self {
             Self::Initial(i) => Some(*i),
             Self::Tentative => Some(0),
-            _ => None,
+            Self::NoInit => None,
         }
     }
 }
@@ -108,7 +108,7 @@ impl IdAttr {
     pub fn is_global(&self) -> bool {
         match self {
             Self::Fun { global, .. } | Self::Static { global, .. } => *global,
-            _ => false,
+            Self::Local => false,
         }
     }
 }
@@ -250,7 +250,7 @@ fn typecheck_for_st(mut for_st: For, sym_table: &mut SymTable) -> Result<Stateme
 fn typecheck_forinit(init: AstForInit, sym_table: &mut SymTable) -> Result<AstForInit> {
     match init {
         AstForInit::InitDecl(vardec) => {
-            if let Some(_) = vardec.storage_class {
+            if vardec.storage_class.is_some() {
                 return Err(SemAnalysisError::StorageIdInForInit(vardec.name.clone()));
             }
             typecheck_vardec(vardec, sym_table).map(AstForInit::InitDecl)
@@ -377,7 +377,7 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
         }
     } else if vardec.storage_class == Some(StorageClass::Static) {
         if vardec.init.is_some() {
-            initial_value = get_const_init(vardec.init.clone().unwrap())?;
+            initial_value = get_const_init(vardec.init.as_ref().unwrap())?;
         }
         let entry = SymTableEntry {
             sym_type: Type::Int,
@@ -425,18 +425,18 @@ fn typecheck_block(block: AstBlock, sym_table: &mut SymTable) -> Result<AstBlock
     Ok(AstBlock { items })
 }
 
-fn get_const_init(init: Exp) -> Result<InitValue> {
+fn get_const_init(init: &Exp) -> Result<InitValue> {
     if let Exp::Constant(i) = init {
-        Ok(InitValue::Initial(i as i64))
+        Ok(InitValue::Initial(*i as i64))
     } else {
-        Err(SemAnalysisError::NonConstantInit("".to_owned()))
+        Err(SemAnalysisError::NonConstantInit(String::new()))
     }
 }
 
 pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
     let mut init_val = InitValue::NoInit;
     if let Some(init_exp) = vardec.init.clone() {
-        init_val = get_const_init(init_exp)?;
+        init_val = get_const_init(&init_exp)?;
     } else if vardec.storage_class != Some(StorageClass::Extern) {
         init_val = InitValue::Tentative;
     }
@@ -458,9 +458,8 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
                 return Err(SemAnalysisError::IdentifierRedeclaration(
                     vardec.name.clone(),
                 ));
-            } else {
-                init_val = old_dec.attrs.get_init().unwrap();
             }
+            init_val = old_dec.attrs.get_init().unwrap();
         } else if !init_val.is_const() && old_dec.attrs.get_init().unwrap() == InitValue::Tentative
         {
             init_val = InitValue::Tentative;

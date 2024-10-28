@@ -301,15 +301,17 @@ fn resolve_param(param: Identifier, im: &mut IdentifierMap) -> Result<Identifier
 }
 
 fn resolve_vardec(dec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
+    let extern_storage_class = matches!(dec.storage_class, Some(StorageClass::Extern));
+
     if let Some(prev_entry) = im.get(&dec.name) {
-        if prev_entry.in_current_scope {
-            if !(prev_entry.has_linkage && dec.storage_class == Some(StorageClass::Extern)) {
-                return Err(SemAnalysisError::IdentifierRedeclaration(dec.name.clone()));
-            }
+        let prev_in_current_scope = prev_entry.in_current_scope;
+        let prev_has_linkage = prev_entry.has_linkage;
+        if prev_in_current_scope && !(prev_has_linkage && extern_storage_class) {
+            return Err(SemAnalysisError::IdentifierRedeclaration(dec.name.clone()));
         }
     }
 
-    if dec.storage_class == Some(StorageClass::Extern) {
+    if extern_storage_class {
         let entry = MapEntry {
             name: dec.name.clone(),
             in_current_scope: true,
@@ -378,6 +380,7 @@ fn resolve_global_declaration(dec: Declaration, im: &mut IdentifierMap) -> Resul
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn resolve_toplevel_vardec(vardec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
     let entry = MapEntry {
         name: vardec.name.clone(),

@@ -261,7 +261,7 @@ fn parse_specifiers(cursor: &mut Cursor) -> Result<Option<StorageClass>> {
     }
 
     let mut storage_class = None;
-    if let Some(sc) = storage_classes.get(0) {
+    if let Some(sc) = storage_classes.first() {
         match sc {
             Token::Extern => storage_class = Some(StorageClass::Extern),
             Token::Static => storage_class = Some(StorageClass::Static),
@@ -278,7 +278,7 @@ fn parse_forinit(cursor: &mut Cursor) -> Result<AstForInit> {
         let dec = parse_declaration(cursor)?;
         match dec {
             Declaration::Var(vardec) => Ok(AstForInit::InitDecl(vardec)),
-            _ => Err(ParseError::BadForInit),
+            Declaration::Fun(_) => Err(ParseError::BadForInit),
         }
     } else {
         let exp = parse_optional_exp(cursor, &Token::Semicolon)?;
@@ -608,41 +608,6 @@ fn parse_block(cursor: &mut Cursor) -> Result<AstBlock> {
     Ok(AstBlock { items })
 }
 
-#[deprecated]
-fn parse_vardec(cursor: &mut Cursor) -> Result<VarDec> {
-    cursor.expect(&Token::Int)?;
-    let name = parse_identifier(cursor)?;
-    let assign = cursor.bump_if(&Token::Assign);
-    let init = assign.then(|| parse_exp(cursor, 0)).transpose()?;
-    cursor.expect(&Token::Semicolon)?;
-
-    Ok(VarDec {
-        name,
-        init,
-        storage_class: None,
-    })
-}
-
-#[deprecated]
-fn parse_fundec(cursor: &mut Cursor) -> Result<FunDec> {
-    cursor.expect(&Token::Int)?;
-    let name = parse_identifier(cursor)?;
-
-    cursor.expect(&Token::OpenParanth)?;
-    let params = parse_params(cursor)?;
-    cursor.expect(&Token::CloseParanth)?;
-
-    let semicolon = cursor.bump_if(&Token::Semicolon);
-    let body = (!semicolon).then(|| parse_block(cursor)).transpose()?;
-
-    Ok(FunDec {
-        name,
-        params,
-        body,
-        storage_class: None,
-    })
-}
-
 fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
     let storage_class = parse_specifiers(cursor)?;
     let name = parse_identifier(cursor)?;
@@ -671,8 +636,8 @@ fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
             Ok(Declaration::Fun(FunDec {
                 name,
                 params,
-                storage_class,
                 body,
+                storage_class,
             }))
         }
         _ => Err(ParseError::UnexpectedToken(next.clone())),
