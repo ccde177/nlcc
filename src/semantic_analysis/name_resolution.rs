@@ -4,10 +4,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use std::collections::HashMap;
 
-static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 fn generate_name(before: &str) -> Identifier {
-    let v = GLOBAL_COUNTER.fetch_add(1, Ordering::AcqRel);
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let v = COUNTER.fetch_add(1, Ordering::AcqRel);
     format!("{before}..{v}")
 }
 
