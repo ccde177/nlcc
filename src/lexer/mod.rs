@@ -359,10 +359,7 @@ pub fn lex(input: &str) -> Result<Tokens> {
                 let token = lex_constant(&mut cursor)?;
                 tokens.push(token);
             }
-            _ => {
-                panic!("wtf");
-                return Err(LexError::UnexpectedChar(next));
-            }
+            _ => return Err(LexError::UnexpectedChar(next)),
         }
         cursor.skip_whitespaces();
     }
