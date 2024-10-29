@@ -5,19 +5,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashMap;
 
 static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
-struct NameGenerator(&'static AtomicUsize);
 
-impl NameGenerator {
-    #[inline]
-    fn get_instance() -> Self {
-        Self(&GLOBAL_COUNTER)
-    }
-
-    #[inline]
-    fn generate_name(&self, before: &Identifier) -> Identifier {
-        let v = self.0.fetch_add(1, Ordering::AcqRel);
-        format!("{before}..{v}")
-    }
+fn generate_name(before: &str) -> Identifier {
+    let v = GLOBAL_COUNTER.fetch_add(1, Ordering::AcqRel);
+    format!("{before}..{v}")
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -64,8 +55,7 @@ impl IdentifierMap {
     }
 
     fn add_uniq_to_scope(&mut self, name: Identifier) -> Identifier {
-        let ng = NameGenerator::get_instance();
-        let generated = ng.generate_name(&name);
+        let generated = generate_name(&name);
         let entry = MapEntry {
             name: generated.clone(),
             in_current_scope: true,
