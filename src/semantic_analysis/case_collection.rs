@@ -115,15 +115,12 @@ fn collect_statement(statement: Statement) -> Result<(Statement, Cases)> {
         S::Cased(cased) => collect_cased(cased),
         S::Switch(switch) => collect_switch(switch),
         S::If(if_st) => collect_if_st(if_st),
-        Statement::For(for_st) => collect_for_st(for_st),
-        Statement::DoWhile(dowhile) => collect_dowhile(dowhile),
-        Statement::While(while_st) => collect_while(while_st),
-        Statement::Null
-        | Statement::Goto(_)
-        | Statement::Return(_)
-        | Statement::Continue(_)
-        | Statement::Break(_)
-        | Statement::Exp(_) => Ok((statement, Cases::new())),
+        S::For(for_st) => collect_for_st(for_st),
+        S::DoWhile(dowhile) => collect_dowhile(dowhile),
+        S::While(while_st) => collect_while(while_st),
+        S::Null | S::Goto(_) | S::Return(_) | S::Continue(_) | S::Break(_) | S::Exp(_) => {
+            Ok((statement, Cases::new()))
+        }
     }
 }
 
