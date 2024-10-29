@@ -117,7 +117,7 @@ fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
     }
 
     let mut expect_more = false;
-    while let Token::Int = cursor.peek_or_error()? {
+    while cursor.bump_if(&Token::Int) {
         let parameter = parse_parameter(cursor)?;
         params.push(parameter);
         expect_more = cursor.bump_if(&Token::Comma);
@@ -586,8 +586,8 @@ fn parse_statement(cursor: &mut Cursor) -> Result<Statement> {
 }
 
 fn parse_block_item(cursor: &mut Cursor) -> Result<AstBlockItem> {
-    let next = cursor.peek_or_error()?;
-    match next {
+    let peek = cursor.peek_or_error()?;
+    match peek {
         t if t.is_specifier() => parse_declaration(cursor).map(AstBlockItem::D),
         _ => parse_statement(cursor).map(AstBlockItem::S),
     }
@@ -598,12 +598,10 @@ fn parse_block(cursor: &mut Cursor) -> Result<AstBlock> {
 
     cursor.expect(&Token::OpenCurly)?;
 
-    while cursor.peek_or_error()? != &Token::CloseCurly {
+    while !cursor.bump_if(&Token::CloseCurly) {
         let item = parse_block_item(cursor)?;
         items.push(item);
     }
-
-    cursor.expect(&Token::CloseCurly)?;
 
     Ok(AstBlock { items })
 }

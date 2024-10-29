@@ -158,6 +158,7 @@ impl Token {
         )
     }
 
+    #[must_use]
     pub fn compound_to_single(&self) -> Self {
         match self {
             Self::AssignAdd => Self::Plus,

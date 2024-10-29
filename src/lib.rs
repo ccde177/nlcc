@@ -5,6 +5,7 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::must_use_candidate)]
 
 pub mod ast;
 pub mod codegen;
