@@ -213,9 +213,9 @@ fn typecheck_statement(st: Statement, sym_table: &mut SymTable) -> Result<Statem
         S::Cased(cased) => typecheck_cased_st(cased, sym_table),
         S::DCased(dcased) => typecheck_dcased_st(dcased, sym_table),
         S::Labeled(name, st) => typecheck_labeled_st(name, *st, sym_table),
-        S::Compound(block) => typecheck_block(block, sym_table).map(S::Compound).map(Ok)?,
-        S::Return(exp) => typecheck_exp(exp, sym_table).map(S::Return).map(Ok)?,
-        S::Exp(exp) => typecheck_exp(exp, sym_table).map(S::Exp).map(Ok)?,
+        S::Compound(block) => typecheck_block(block, sym_table).map(S::Compound),
+        S::Return(exp) => typecheck_exp(exp, sym_table).map(S::Return),
+        S::Exp(exp) => typecheck_exp(exp, sym_table).map(S::Exp),
         S::Goto(_) | S::Continue(_) | S::Break(_) | S::Null => Ok(st),
     }
 }
