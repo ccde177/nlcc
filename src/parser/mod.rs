@@ -242,7 +242,7 @@ fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
     Ok(left)
 }
 
-fn parse_specifiers(cursor: &mut Cursor) -> Result<Option<StorageClass>> {
+fn parse_specifiers(cursor: &mut Cursor) -> Result<StorageClass> {
     let mut types = Vec::new();
     let mut storage_classes = Vec::new();
     while let Some(token) = cursor.next_if(Token::is_specifier) {
@@ -260,11 +260,11 @@ fn parse_specifiers(cursor: &mut Cursor) -> Result<Option<StorageClass>> {
         return Err(ParseError::InvalidStorageClass(storage_classes));
     }
 
-    let mut storage_class = None;
+    let mut storage_class = StorageClass::Auto;
     if let Some(sc) = storage_classes.first() {
         match sc {
-            Token::Extern => storage_class = Some(StorageClass::Extern),
-            Token::Static => storage_class = Some(StorageClass::Static),
+            Token::Extern => storage_class = StorageClass::Extern,
+            Token::Static => storage_class = StorageClass::Static,
             _ => unreachable!(),
         }
     }

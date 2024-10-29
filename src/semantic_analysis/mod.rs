@@ -73,7 +73,7 @@ impl fmt::Display for SemAnalysisError {
             Self::ContinueOutsideOfLoop => write!(f, "continue statement outside of loop"),
             Self::CaseNotInSwitch => write!(f, "case not in switch"),
             Self::NotAConstCase(exp) => {
-                write!(f, "Not a const expression inside case label: {exp:?}")
+                write!(f, "Not a const expression in case: {exp:?}")
             }
             Self::DefaultNotInSwitch => write!(f, "default case not in switch"),
             Self::DuplicateCase(case) => write!(f, "Duplicate case {case:?}"),

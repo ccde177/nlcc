@@ -5,6 +5,12 @@ use std::collections::HashMap;
 use std::iter::IntoIterator;
 use std::sync::OnceLock;
 
+// Right now every function in this module is gonna return Ok(input) without changing it.
+// So whole type checking phase is not gonna change the AST.
+// However, later on type checking phase WILL change the AST
+// and that is why I am gonna stick to this redundancy:
+// to make it easier to introduce changes later.
+
 // Global read-only symbol table
 pub static SYM_TABLE: GlobalSymTable = GlobalSymTable::new();
 pub struct GlobalSymTable {
@@ -56,7 +62,7 @@ impl SymTableEntry {
     }
 
     pub fn get_init(&self) -> Option<i64> {
-        self.attrs.get_init().and_then(|iv| iv.get_tacky_init())
+        self.attrs.get_init().and_then(|iv| iv.get_initial())
     }
 }
 
@@ -72,7 +78,7 @@ impl InitValue {
         matches!(self, Self::Initial(_))
     }
 
-    pub fn get_tacky_init(&self) -> Option<i64> {
+    pub fn get_initial(&self) -> Option<i64> {
         match self {
             Self::Initial(i) => Some(*i),
             Self::Tentative => Some(0),
@@ -124,27 +130,19 @@ impl IdAttr {
 
 pub type SymTable = HashMap<Identifier, SymTableEntry>;
 
-// Right now every function in this module is gonna return Ok(input) without changing it.
-// So whole type checking phase is not gonna change the AST.
-// However, later on type checking phase WILL change the AST
-// and that is why I am gonna stick to this redundancy:
-// to make it easier to introduce changes later.
-
 fn typecheck_call(name: Identifier, args: Vec<Exp>, sym_table: &mut SymTable) -> Result<Exp> {
-    let f_type = sym_table
-        .get(&name)
-        .ok_or(SemAnalysisError::UndeclaredFunction(name.clone()))?;
-    if let Type::Fun { nargs } = f_type.sym_type {
-        if args.len() != nargs {
-            return Err(SemAnalysisError::ExpectedArgsCountButGot(
-                nargs,
-                args.len(),
-                name.clone(),
-            ));
-        }
-    } else {
-        return Err(SemAnalysisError::VariableCall(name));
-    }
+    use SemAnalysisError::ExpectedArgsCountButGot as ArgsCountErr;
+    use SemAnalysisError::UndeclaredFunction as UnknownFunErr;
+    use SemAnalysisError::VariableCall as VarCallErr;
+
+    let entry = sym_table.get(&name).ok_or(UnknownFunErr(name.clone()))?;
+    let len = args.len();
+    match entry.sym_type {
+        Type::Fun { nargs } if nargs == len => Ok(()),
+        Type::Fun { nargs } => Err(ArgsCountErr(nargs, len, name.clone())),
+        _ => Err(VarCallErr(name.clone())),
+    }?;
+
     let args = args
         .into_iter()
         .map(|exp| typecheck_exp(exp, sym_table))
@@ -154,11 +152,12 @@ fn typecheck_call(name: Identifier, args: Vec<Exp>, sym_table: &mut SymTable) ->
 }
 
 fn typecheck_var(name: Identifier, sym_table: &mut SymTable) -> Result<Exp> {
-    let entry = sym_table
-        .get(&name)
-        .ok_or(SemAnalysisError::VariableNotDeclared(name.clone()))?;
+    use SemAnalysisError::FunctionNameAsVariable as FunAsVarErr;
+    use SemAnalysisError::VariableNotDeclared as UnknownVarErr;
+
+    let entry = sym_table.get(&name).ok_or(UnknownVarErr(name.clone()))?;
     if entry.sym_type != Type::Int {
-        return Err(SemAnalysisError::FunctionNameAsVariable(name.clone()));
+        return Err(FunAsVarErr(name.clone()));
     }
 
     Ok(Exp::Var(name))
@@ -257,17 +256,18 @@ fn typecheck_for_st(mut for_st: For, sym_table: &mut SymTable) -> Result<Stateme
 }
 
 fn typecheck_forinit(init: AstForInit, sym_table: &mut SymTable) -> Result<AstForInit> {
+    use AstForInit as FI;
+    use SemAnalysisError::StorageIdInForInit as FIWrongSClassErr;
+
     match init {
-        AstForInit::InitDecl(vardec) => {
-            if vardec.storage_class.is_some() {
-                return Err(SemAnalysisError::StorageIdInForInit(vardec.name.clone()));
-            }
-            typecheck_vardec(vardec, sym_table).map(AstForInit::InitDecl)
+        FI::InitDecl(vardec) if !vardec.storage_class.is_auto() => {
+            Err(FIWrongSClassErr(vardec.name))
         }
-        AstForInit::InitExp(exp) => exp
+        FI::InitDecl(vardec) => typecheck_vardec(vardec, sym_table).map(FI::InitDecl),
+        FI::InitExp(exp) => exp
             .map(|exp| typecheck_exp(exp, sym_table))
             .transpose()
-            .map(AstForInit::InitExp),
+            .map(FI::InitExp),
     }
 }
 
@@ -306,7 +306,8 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
     };
     let has_body = fundec.body.is_some();
     let mut already_defined = false;
-    let mut global = fundec.storage_class != Some(StorageClass::Static);
+    let is_static = fundec.storage_class.is_static();
+    let mut global = !is_static;
 
     if let Some(old_dec) = sym_table.get(&fundec.name) {
         if old_dec.sym_type != fun_type {
@@ -317,7 +318,7 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
             return Err(SemAnalysisError::FunctionRedefinition(fundec.name));
         }
 
-        if old_dec.attrs.is_global() && fundec.storage_class == Some(StorageClass::Static) {
+        if old_dec.attrs.is_global() && is_static {
             return Err(SemAnalysisError::StaticFunctionRedeclaredNonStatic(
                 fundec.name.clone(),
             ));
@@ -364,7 +365,7 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
 
 fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
     let mut initial_value = InitValue::Initial(0);
-    if vardec.storage_class == Some(StorageClass::Extern) {
+    if vardec.storage_class.is_extern() {
         if vardec.init.is_some() {
             return Err(SemAnalysisError::InitOnExternVar(vardec.name.clone()));
         }
@@ -384,7 +385,7 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
             };
             sym_table.insert(vardec.name.clone(), entry);
         }
-    } else if vardec.storage_class == Some(StorageClass::Static) {
+    } else if vardec.storage_class.is_static() {
         if vardec.init.is_some() {
             initial_value = get_const_init(vardec.init.as_ref().unwrap())?;
         }
@@ -411,16 +412,18 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
 }
 
 fn typecheck_declaration(dec: Declaration, sym_table: &mut SymTable) -> Result<Declaration> {
+    use Declaration as D;
     match dec {
-        Declaration::Var(vardec) => typecheck_vardec(vardec, sym_table).map(Declaration::Var),
-        Declaration::Fun(fundec) => typecheck_fundec(fundec, sym_table).map(Declaration::Fun),
+        D::Var(vardec) => typecheck_vardec(vardec, sym_table).map(D::Var),
+        D::Fun(fundec) => typecheck_fundec(fundec, sym_table).map(D::Fun),
     }
 }
 
 fn typecheck_block_item(item: AstBlockItem, sym_table: &mut SymTable) -> Result<AstBlockItem> {
+    use AstBlockItem as ABI;
     match item {
-        AstBlockItem::D(dec) => typecheck_declaration(dec, sym_table).map(AstBlockItem::D),
-        AstBlockItem::S(st) => typecheck_statement(st, sym_table).map(AstBlockItem::S),
+        ABI::D(dec) => typecheck_declaration(dec, sym_table).map(ABI::D),
+        ABI::S(st) => typecheck_statement(st, sym_table).map(ABI::S),
     }
 }
 
@@ -443,30 +446,32 @@ fn get_const_init(init: &Exp) -> Result<InitValue> {
 }
 
 pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
+    use SemAnalysisError::ConflictingLinkage as LinkConfErr;
+    use SemAnalysisError::FunctionRedefinition as FunRedefErr;
+    use SemAnalysisError::IdentifierRedeclaration as IdRedecErr;
+
     let mut init_val = InitValue::NoInit;
     if let Some(init_exp) = vardec.init.clone() {
         init_val = get_const_init(&init_exp)?;
-    } else if vardec.storage_class != Some(StorageClass::Extern) {
+    } else if !vardec.storage_class.is_extern() {
         init_val = InitValue::Tentative;
     }
 
-    let mut global = !matches!(vardec.storage_class, Some(StorageClass::Static));
+    let mut global = !vardec.storage_class.is_static();
 
     if let Some(old_dec) = sym_table.get(&vardec.name) {
         if old_dec.sym_type != Type::Int {
-            return Err(SemAnalysisError::FunctionRedefinition(vardec.name.clone()));
+            return Err(FunRedefErr(vardec.name.clone()));
         }
-        if vardec.storage_class == Some(StorageClass::Extern) {
+        if vardec.storage_class.is_extern() {
             global = old_dec.attrs.is_global();
         } else if old_dec.attrs.is_global() != global {
-            return Err(SemAnalysisError::ConflictingLinkage(vardec.name.clone()));
+            return Err(LinkConfErr(vardec.name.clone()));
         }
 
         if old_dec.attrs.is_const_init() {
             if matches!(init_val, InitValue::Initial(_)) {
-                return Err(SemAnalysisError::IdentifierRedeclaration(
-                    vardec.name.clone(),
-                ));
+                return Err(IdRedecErr(vardec.name.clone()));
             }
             init_val = old_dec.attrs.get_init().unwrap();
         } else if !init_val.is_const() && old_dec.attrs.get_init().unwrap() == InitValue::Tentative
@@ -484,11 +489,10 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
 }
 
 pub fn typecheck_toplevel_dec(dec: Declaration, sym_table: &mut SymTable) -> Result<Declaration> {
+    use Declaration as D;
     match dec {
-        Declaration::Fun(fundec) => typecheck_fundec(fundec, sym_table).map(Declaration::Fun),
-        Declaration::Var(vardec) => {
-            typecheck_toplevel_vardec(vardec, sym_table).map(Declaration::Var)
-        }
+        D::Fun(fundec) => typecheck_fundec(fundec, sym_table).map(D::Fun),
+        D::Var(vardec) => typecheck_toplevel_vardec(vardec, sym_table).map(D::Var),
     }
 }
 

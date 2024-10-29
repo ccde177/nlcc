@@ -290,17 +290,17 @@ fn resolve_param(param: Identifier, im: &mut IdentifierMap) -> Result<Identifier
 }
 
 fn resolve_vardec(dec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
-    let extern_storage_class = matches!(dec.storage_class, Some(StorageClass::Extern));
+    let is_extern = dec.storage_class.is_extern();
 
     if let Some(prev_entry) = im.get(&dec.name) {
         let prev_in_current_scope = prev_entry.in_current_scope;
         let prev_has_linkage = prev_entry.has_linkage;
-        if prev_in_current_scope && !(prev_has_linkage && extern_storage_class) {
+        if prev_in_current_scope && !(prev_has_linkage && is_extern) {
             return Err(SemAnalysisError::IdentifierRedeclaration(dec.name.clone()));
         }
     }
 
-    if extern_storage_class {
+    if is_extern {
         let entry = MapEntry {
             name: dec.name.clone(),
             in_current_scope: true,
@@ -330,7 +330,7 @@ fn resolve_local_declaration(dec: Declaration, im: &mut IdentifierMap) -> Result
             Ok(Declaration::Var(resolved))
         }
         Declaration::Fun(fundec) => {
-            if fundec.body.is_some() || fundec.storage_class == Some(StorageClass::Static) {
+            if fundec.body.is_some() || fundec.storage_class.is_static() {
                 return Err(SemAnalysisError::LocalFunDefinition(fundec.name));
             }
             let resolved = resolve_fundec(fundec, im)?;

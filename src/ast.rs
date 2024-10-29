@@ -22,6 +22,7 @@ pub enum Type {
 pub enum StorageClass {
     Static,
     Extern,
+    Auto,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,14 +42,14 @@ pub struct FunDec {
     pub name: Identifier,
     pub params: Vec<Identifier>,
     pub body: Option<AstBlock>,
-    pub storage_class: Option<StorageClass>,
+    pub storage_class: StorageClass,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VarDec {
     pub name: Identifier,
     pub init: Option<Exp>,
-    pub storage_class: Option<StorageClass>,
+    pub storage_class: StorageClass,
 }
 
 pub type Cases = Vec<(Option<u64>, Identifier)>;
@@ -190,5 +191,19 @@ impl Exp {
             Exp::Constant(u) => Some(*u),
             _ => None,
         }
+    }
+}
+
+impl StorageClass {
+    pub fn is_static(&self) -> bool {
+        matches!(self, Self::Static)
+    }
+
+    pub fn is_extern(&self) -> bool {
+        matches!(self, Self::Extern)
+    }
+
+    pub fn is_auto(&self) -> bool {
+        matches!(self, Self::Auto)
     }
 }

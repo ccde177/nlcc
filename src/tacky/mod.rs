@@ -552,7 +552,7 @@ fn emit_statement(statement: Statement, instructions: &mut TInstructions) {
 }
 
 fn emit_vardec(vardec: VarDec, instructions: &mut TInstructions) {
-    if vardec.storage_class.is_some() {
+    if !vardec.storage_class.is_auto() {
         return;
     }
     if let Some(init) = vardec.init {
