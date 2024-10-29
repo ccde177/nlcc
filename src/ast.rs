@@ -15,6 +15,7 @@ pub struct AstBlock {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type {
     Int,
+    Long,
     Fun { nargs: usize },
 }
 
