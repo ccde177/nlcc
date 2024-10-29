@@ -23,6 +23,14 @@ impl<'a> Cursor<'a> {
         chars.next()
     }
 
+    pub fn bump_if(&mut self, value: char) -> bool {
+        let should_skip = self.peek().filter(|&c| c == value).is_some();
+        if should_skip {
+            self.take();
+        }
+        should_skip
+    }
+
     #[inline]
     pub fn skip_if(&mut self, p: impl FnOnce(char) -> bool) -> bool {
         let skipped = self.peek().filter(|&c| p(c)).is_some();

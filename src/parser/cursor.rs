@@ -23,6 +23,14 @@ impl<'a> Cursor<'a> {
         self.position += 1;
     }
 
+    #[inline]
+    pub fn skip_if(&mut self, p: impl FnOnce(&Token) -> bool) -> bool {
+        let condition = self.peek().filter(|&t| p(t)).is_some();
+        if condition {
+            self.bump();
+        }
+        condition
+    }
     pub fn bump_if(&mut self, t: &Token) -> bool {
         let condition = self.peek() == Some(t);
         if condition {

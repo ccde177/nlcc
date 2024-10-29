@@ -18,7 +18,7 @@ fn collect_dcased(dcased: DCasedStatement) -> Result<(Statement, Cases)> {
     let (body, mut cases) = collect_statement(*body)?;
     let result_case = (None, label.clone());
 
-    if cases.insert(result_case) {
+    if !cases.insert(result_case) {
         return Err(SemAnalysisError::DuplicateCase("default".into()));
     }
 
@@ -36,7 +36,7 @@ fn collect_cased(cased_st: CasedStatement) -> Result<(Statement, Cases)> {
     let (body, mut cases) = collect_statement(*body)?;
     let result_case = (Some(u), label.clone());
 
-    if cases.insert(result_case) {
+    if !cases.insert(result_case) {
         return Err(SemAnalysisError::DuplicateCase(u.to_string()));
     }
 

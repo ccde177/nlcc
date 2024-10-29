@@ -3,7 +3,6 @@ mod cursor;
 mod lexer_tests;
 
 use cursor::Cursor;
-
 use std::{error, fmt};
 
 pub type Tokens = Vec<Token>;
@@ -19,6 +18,7 @@ pub enum Token {
     OpenCurly,
     Return,
     Constant(u64),
+    LConstant(u64),
     Semicolon,
     CloseCurly,
     Tilde,
@@ -70,12 +70,15 @@ pub enum Token {
     Comma,
     Static,
     Extern,
+    Long,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum LexError {
     UnexpectedChar(char),
     BadMcharOperator(String),
+    BadConstantSuffix(char),
+    ExpectedOperatorOrSeparator(char),
 }
 
 impl error::Error for LexError {}
@@ -84,6 +87,10 @@ impl fmt::Display for LexError {
         match self {
             Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
             Self::BadMcharOperator(s) => write!(f, "Bad multi-char operator: {s}"),
+            Self::BadConstantSuffix(c) => write!(f, "Bad constant suffix: {c}"),
+            Self::ExpectedOperatorOrSeparator(c) => {
+                write!(f, "Expected operator or separator, but got: {c}")
+            }
         }
     }
 }
@@ -201,7 +208,7 @@ impl TryFrom<char> for Token {
             ':' => Ok(Self::Colon),
             '?' => Ok(Self::QuestionMark),
             ',' => Ok(Self::Comma),
-            _ => Err(LexError::UnexpectedChar(c)),
+            _ => Err(LexError::ExpectedOperatorOrSeparator(c)),
         }
     }
 }
@@ -210,6 +217,7 @@ impl From<&str> for Token {
     fn from(s: &str) -> Self {
         match s {
             "int" => Self::Int,
+            "long" => Self::Long,
             "return" => Self::Return,
             "void" => Self::Void,
             "if" => Self::If,
@@ -289,24 +297,25 @@ fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
 fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
     let start = cursor.as_str();
     let mut count = 0;
-    while let Some(c) = cursor.peek() {
-        if !c.is_ascii_digit() {
-            break;
-        }
+
+    while cursor.skip_if(|c| c.is_ascii_digit()) {
         count += 1;
-        cursor.take();
     }
+
+    let is_long = cursor.bump_if('l') || cursor.bump_if('L');
 
     if let Some(next) = cursor.peek() {
         if next.is_alphabetic() || next == '_' {
-            return Err(LexError::UnexpectedChar(next));
+            return Err(LexError::BadConstantSuffix(next));
         }
     }
 
-    let constant = start[..count]
-        .parse::<u64>()
-        .map(Token::Constant)
-        .expect("Should never fail");
+    let parsed = start[..count].parse::<u64>();
+    let constant = if is_long {
+        parsed.map(Token::LConstant).expect("Should never fail")
+    } else {
+        parsed.map(Token::Constant).expect("Should never fail")
+    };
 
     Ok(constant)
 }
@@ -350,7 +359,10 @@ pub fn lex(input: &str) -> Result<Tokens> {
                 let token = lex_constant(&mut cursor)?;
                 tokens.push(token);
             }
-            _ => return Err(LexError::UnexpectedChar(next)),
+            _ => {
+                panic!("wtf");
+                return Err(LexError::UnexpectedChar(next));
+            }
         }
         cursor.skip_whitespaces();
     }

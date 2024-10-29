@@ -101,10 +101,8 @@ fn parse_identifier(cursor: &mut Cursor) -> Result<Identifier> {
     }
 }
 
-fn parse_parameter(cursor: &mut Cursor) -> Result<Identifier> {
-    cursor.expect(&Token::Int)?;
-    let name = parse_identifier(cursor)?;
-    Ok(name)
+fn token_is_type(t: &Token) -> bool {
+    matches!(t, Token::Int | Token::Long)
 }
 
 fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
@@ -117,8 +115,8 @@ fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
     }
 
     let mut expect_more = false;
-    while cursor.bump_if(&Token::Int) {
-        let parameter = parse_parameter(cursor)?;
+    while cursor.skip_if(token_is_type) {
+        let parameter = parse_identifier(cursor)?;
         params.push(parameter);
         expect_more = cursor.bump_if(&Token::Comma);
     }
