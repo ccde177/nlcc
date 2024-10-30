@@ -8,9 +8,15 @@
 #![allow(clippy::must_use_candidate)]
 
 pub mod ast;
+#[cfg(feature = "codegen")]
 pub mod codegen;
+#[cfg(feature = "emission")]
 pub mod emission;
+#[cfg(feature = "lexer")]
 pub mod lexer;
+#[cfg(feature = "parser")]
 pub mod parser;
+#[cfg(feature = "semantic_analysis")]
 pub mod semantic_analysis;
+#[cfg(feature = "tacky")]
 pub mod tacky;

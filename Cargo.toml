@@ -10,3 +10,13 @@ path = "src/lib.rs"
 [[bin]]
 name = "nlcc"
 path = "src/bin/driver/main.rs"
+
+[features]
+default = ["parser"]
+lexer = []
+parser = ["lexer"]
+semantic_analysis = ["parser"]
+tacky = ["semantic_analysis"]
+codegen = ["tacky"]
+emission = ["codegen"]
+full = ["emission"]
