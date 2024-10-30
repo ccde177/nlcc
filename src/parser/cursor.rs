@@ -7,6 +7,7 @@ pub struct Cursor<'a> {
     position: usize,
 }
 
+#[allow(dead_code)]
 impl<'a> Cursor<'a> {
     pub fn new(tokens: &'a [Token]) -> Self {
         Self {
@@ -31,6 +32,7 @@ impl<'a> Cursor<'a> {
         }
         condition
     }
+
     pub fn bump_if(&mut self, t: &Token) -> bool {
         let condition = self.peek() == Some(t);
         if condition {

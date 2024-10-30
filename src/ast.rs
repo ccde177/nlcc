@@ -7,7 +7,7 @@ pub struct Ast {
 
 pub type AstBlockItems = Vec<AstBlockItem>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct AstBlock {
     pub items: AstBlockItems,
 }
@@ -16,60 +16,65 @@ pub struct AstBlock {
 pub enum Type {
     Int,
     Long,
-    Fun { nargs: usize },
+    Fun {
+        ptypes: Vec<Type>,
+        return_type: Box<Type>,
+    },
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub enum StorageClass {
     Static,
     Extern,
     Auto,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum AstBlockItem {
     S(Statement),
     D(Declaration),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Declaration {
     Var(VarDec),
     Fun(FunDec),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FunDec {
     pub name: Identifier,
     pub params: Vec<Identifier>,
     pub body: Option<AstBlock>,
     pub storage_class: StorageClass,
+    pub fun_type: Type,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct VarDec {
     pub name: Identifier,
     pub init: Option<Exp>,
     pub storage_class: StorageClass,
+    pub var_type: Type,
 }
 
 pub type Cases = Vec<(Option<u64>, Identifier)>;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DoWhile {
     pub body: Box<Statement>,
     pub condition: Exp,
     pub label: Identifier,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct While {
     pub condition: Exp,
     pub body: Box<Statement>,
     pub label: Identifier,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct For {
     pub init: AstForInit,
     pub condition: Option<Exp>,
@@ -78,14 +83,14 @@ pub struct For {
     pub label: Identifier,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct If {
     pub condition: Exp,
     pub then: Box<Statement>,
     pub els: Option<Box<Statement>>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Switch {
     pub ctrl_exp: Exp,
     pub body: Box<Statement>,
@@ -93,20 +98,20 @@ pub struct Switch {
     pub label: Identifier,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CasedStatement {
     pub exp: Exp,
     pub body: Box<Statement>,
     pub label: Identifier,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DCasedStatement {
     pub body: Box<Statement>,
     pub label: Identifier,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     While(While),
     DoWhile(DoWhile),
@@ -125,31 +130,38 @@ pub enum Statement {
     Null,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum AstForInit {
     InitDecl(VarDec),
     InitExp(Option<Exp>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ConditionalExp {
     pub condition: Box<Exp>,
     pub then: Box<Exp>,
     pub els: Box<Exp>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Exp {
     Conditional(ConditionalExp),
+    Cast(Type, Box<Exp>),
     Binary(AstBinaryOp, Box<Exp>, Box<Exp>),
     Unary(AstUnaryOp, Box<Exp>),
     Assignment(Box<Exp>, Box<Exp>),
     Call(Identifier, Vec<Exp>),
     Var(Identifier),
-    Constant(u64),
+    Constant(AstConst),
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy)]
+pub enum AstConst {
+    Int(i32),
+    Long(i64),
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum AstBinaryOp {
     Add,
     Multiply,
@@ -171,7 +183,7 @@ pub enum AstBinaryOp {
     ShiftRight,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum AstUnaryOp {
     Complement,
     Negate,
@@ -185,13 +197,6 @@ pub enum AstUnaryOp {
 impl Exp {
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
-    }
-
-    pub fn get_const(&self) -> Option<u64> {
-        match self {
-            Exp::Constant(u) => Some(*u),
-            _ => None,
-        }
     }
 }
 

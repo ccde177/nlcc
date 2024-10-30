@@ -138,8 +138,8 @@ fn typecheck_call(name: Identifier, args: Vec<Exp>, sym_table: &mut SymTable) ->
     let entry = sym_table.get(&name).ok_or(UnknownFunErr(name.clone()))?;
     let len = args.len();
     match entry.sym_type {
-        Type::Fun { nargs } if nargs == len => Ok(()),
-        Type::Fun { nargs } => Err(ArgsCountErr(nargs, len, name.clone())),
+        Type::Fun { ptypes: nargs } if nargs == len => Ok(()),
+        Type::Fun { ptypes: nargs } => Err(ArgsCountErr(nargs, len, name.clone())),
         _ => Err(VarCallErr(name.clone())),
     }?;
 
@@ -302,7 +302,7 @@ fn typecheck_while_st(mut while_st: While, sym_table: &mut SymTable) -> Result<S
 
 fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> {
     let fun_type = Type::Fun {
-        nargs: fundec.params.len(),
+        ptypes: fundec.params.len(),
     };
     let has_body = fundec.body.is_some();
     let mut already_defined = false;

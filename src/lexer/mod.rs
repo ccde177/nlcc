@@ -17,8 +17,8 @@ pub enum Token {
     CloseParanth,
     OpenCurly,
     Return,
-    Constant(u64),
-    LConstant(u64),
+    Constant(i64),
+    LConstant(i64),
     Semicolon,
     CloseCurly,
     Tilde,
@@ -97,6 +97,11 @@ impl fmt::Display for LexError {
 
 impl Token {
     #[inline]
+    pub fn is_type(&self) -> bool {
+        matches!(self, Self::Int | Self::Long)
+    }
+
+    #[inline]
     pub fn is_compound_assign(&self) -> bool {
         matches!(
             self,
@@ -115,7 +120,7 @@ impl Token {
 
     #[inline]
     pub fn is_specifier(&self) -> bool {
-        matches!(self, Token::Int | Token::Extern | Token::Static)
+        self.is_type() || matches!(self, Token::Extern | Token::Static)
     }
 
     #[inline]
@@ -310,11 +315,17 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
         }
     }
 
-    let parsed = start[..count].parse::<u64>();
+    let const_str = &start[..count];
     let constant = if is_long {
-        parsed.map(Token::LConstant).expect("Should never fail")
+        const_str
+            .parse::<i64>()
+            .map(Token::LConstant)
+            .expect("Should never fail")
     } else {
-        parsed.map(Token::Constant).expect("Should never fail")
+        const_str
+            .parse::<i64>()
+            .map(Token::Constant)
+            .expect("Should never fail")
     };
 
     Ok(constant)

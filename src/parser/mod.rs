@@ -101,21 +101,28 @@ fn parse_identifier(cursor: &mut Cursor) -> Result<Identifier> {
     }
 }
 
-fn token_is_type(t: &Token) -> bool {
-    matches!(t, Token::Int | Token::Long)
+fn parse_type_specifiers(cursor: &mut Cursor) -> Result<Type> {
+    let mut types = Vec::new();
+    while let Some(next) = cursor.next_if(Token::is_type).cloned() {
+        types.push(next);
+    }
+    parse_type(&types)
 }
 
-fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
+fn parse_params(cursor: &mut Cursor) -> Result<(Vec<Type>, Vec<Identifier>)> {
     let mut params = Vec::new();
+    let mut ptypes = Vec::new();
 
     let void = cursor.bump_if(&Token::Void);
 
     if void {
-        return Ok(params);
+        return Ok((ptypes, params));
     }
 
     let mut expect_more = false;
-    while cursor.skip_if(token_is_type) {
+    while cursor.peek_or_error()?.is_type() {
+        let ptype = parse_type_specifiers(cursor)?;
+        ptypes.push(ptype);
         let parameter = parse_identifier(cursor)?;
         params.push(parameter);
         expect_more = cursor.bump_if(&Token::Comma);
@@ -125,7 +132,7 @@ fn parse_params(cursor: &mut Cursor) -> Result<Vec<Identifier>> {
         return Err(ParseError::TrailingComma);
     }
 
-    Ok(params)
+    Ok((ptypes, params))
 }
 
 fn parse_conditional_middle(cursor: &mut Cursor) -> Result<Exp> {
@@ -240,33 +247,36 @@ fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
     Ok(left)
 }
 
-fn parse_specifiers(cursor: &mut Cursor) -> Result<StorageClass> {
+fn parse_type(types: &[Token]) -> Result<Type> {
+    match &types[..] {
+        [Token::Long, Token::Int] | [Token::Int, Token::Long] | [Token::Long] => Ok(Type::Long),
+        [Token::Int] => Ok(Type::Int),
+        _ => Err(ParseError::InvalidTypeSpecifiers(types.to_vec())),
+    }
+}
+
+fn parse_storage_class(classes: &[Token]) -> Result<StorageClass> {
+    match &classes[..] {
+        [Token::Extern] => Ok(StorageClass::Extern),
+        [Token::Static] => Ok(StorageClass::Static),
+        [] => Ok(StorageClass::Auto),
+        _ => Err(ParseError::InvalidStorageClass(classes.to_vec())),
+    }
+}
+
+fn parse_specifiers(cursor: &mut Cursor) -> Result<(Type, StorageClass)> {
     let mut types = Vec::new();
     let mut storage_classes = Vec::new();
-    while let Some(token) = cursor.next_if(Token::is_specifier) {
+    while let Some(token) = cursor.next_if(Token::is_specifier).cloned() {
         match token {
-            Token::Int => types.push(token.clone()),
-            _ => storage_classes.push(token.clone()),
+            Token::Int | Token::Long => types.push(token),
+            _ => storage_classes.push(token),
         }
     }
+    let rtype = parse_type(&types)?;
+    let storage_class = parse_storage_class(&storage_classes)?;
 
-    if types.len() != 1 {
-        return Err(ParseError::InvalidTypeSpecifiers(types));
-    }
-
-    if storage_classes.len() > 1 {
-        return Err(ParseError::InvalidStorageClass(storage_classes));
-    }
-
-    let mut storage_class = StorageClass::Auto;
-    if let Some(sc) = storage_classes.first() {
-        match sc {
-            Token::Extern => storage_class = StorageClass::Extern,
-            Token::Static => storage_class = StorageClass::Static,
-            _ => unreachable!(),
-        }
-    }
-    Ok(storage_class)
+    Ok((rtype, storage_class))
 }
 
 #[allow(clippy::single_match_else)]
@@ -541,15 +551,38 @@ fn parse_postfixop(cursor: &mut Cursor) -> Result<AstUnaryOp> {
     }
 }
 
+fn parse_typecast_or_subexp(cursor: &mut Cursor) -> Result<Exp> {
+    let peek = cursor.peek_nth_or_error(1)?;
+    if peek.is_type() {
+        parse_typecast(cursor)
+    } else {
+        parse_factor_subexp(cursor)
+    }
+}
+
+fn parse_typecast(cursor: &mut Cursor) -> Result<Exp> {
+    cursor.expect(&Token::OpenParanth)?;
+    let rtype = parse_type_specifiers(cursor)?;
+    cursor.expect(&Token::CloseParanth)?;
+
+    let subexp = parse_factor(cursor).map(Box::new)?;
+    Ok(Exp::Cast(rtype, subexp))
+}
+
 fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
     let peek = cursor.peek_or_error()?;
     match peek {
         Token::Identifier(_) => parse_factor_identifier(cursor),
-        Token::OpenParanth => parse_factor_subexp(cursor),
-        Token::Constant(u) => {
-            let constant = Exp::Constant(*u);
+        Token::OpenParanth => parse_typecast_or_subexp(cursor),
+        Token::Constant(i) => {
+            let constant = Exp::Constant(AstConst::Int(*i as i32));
             cursor.bump();
             Ok(constant)
+        }
+        Token::LConstant(i) => {
+            let lconstant = Exp::Constant(AstConst::Long(*i as i64));
+            cursor.bump();
+            Ok(lconstant)
         }
         t if t.is_unaryop() => parse_unary_operation(cursor),
         _ => Err(ParseError::BadFactor(peek.clone())),
@@ -605,7 +638,7 @@ fn parse_block(cursor: &mut Cursor) -> Result<AstBlock> {
 }
 
 fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
-    let storage_class = parse_specifiers(cursor)?;
+    let (rtype, storage_class) = parse_specifiers(cursor)?;
     let name = parse_identifier(cursor)?;
     let next = cursor.next_or_error()?;
 
@@ -617,23 +650,30 @@ fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
                 init: Some(exp),
                 name,
                 storage_class,
+                var_type: rtype,
             }))
         }
         Token::Semicolon => Ok(Declaration::Var(VarDec {
             init: None,
             name,
             storage_class,
+            var_type: rtype,
         })),
         Token::OpenParanth => {
-            let params = parse_params(cursor)?;
+            let (ptypes, params) = parse_params(cursor)?;
             cursor.expect(&Token::CloseParanth)?;
             let has_body = !cursor.bump_if(&Token::Semicolon);
             let body = has_body.then(|| parse_block(cursor)).transpose()?;
+            let fun_type = Type::Fun {
+                ptypes,
+                return_type: Box::new(rtype),
+            };
             Ok(Declaration::Fun(FunDec {
                 name,
                 params,
                 body,
                 storage_class,
+                fun_type,
             }))
         }
         _ => Err(ParseError::UnexpectedToken(next.clone())),
