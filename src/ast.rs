@@ -155,6 +155,12 @@ impl From<Exp> for UntypedExp {
     }
 }
 
+impl From<UntypedExp> for Exp {
+    fn from(value: UntypedExp) -> Self {
+        Self::Untyped(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Exp {
     Typed(Type, UntypedExp),

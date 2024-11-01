@@ -67,7 +67,7 @@ fn validate(ast: ast::Ast, args: &Args) -> Result<Ast, BoxedError> {
 
 #[cfg(feature = "tacky")]
 fn gen_tacky(ast: ast::Ast, args: &Args) -> Result<tacky::TAst, BoxedError> {
-    let tacky = tacky::emit_tacky(validated_ast);
+    let tacky = tacky::emit_tacky(ast);
     if args.tacky {
         dbg!(&tacky);
         exit(0);

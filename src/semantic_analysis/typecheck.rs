@@ -230,11 +230,11 @@ fn typecheck_var(name: Identifier, sym_table: &mut SymTable) -> Result<Exp> {
 }
 
 fn typecheck_assignment(e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Exp> {
-    let e1 = typecheck_exp(e1.into(), sym_table)?; //.map(Box::new)?;
-    let e2 = typecheck_exp(e2.into(), sym_table)?; //.map(Box::new)?;
+    let e1 = typecheck_exp(e1.into(), sym_table).map(Box::new)?;
+    let e2 = typecheck_exp(e2.into(), sym_table)?;
     let left_type = e1.get_type().expect("Should always have type");
-    let converted_right = convert_to(e2, left_type.clone());
-    let assign = Exp::assignment(Box::new(e1), Box::new(converted_right)).set_type(left_type);
+    let converted_right = Box::new(convert_to(e2, left_type.clone()));
+    let assign = Exp::assignment(e1, converted_right).set_type(left_type);
     Ok(assign)
 }
 
