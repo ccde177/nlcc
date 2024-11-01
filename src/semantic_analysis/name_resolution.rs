@@ -84,11 +84,11 @@ fn resolve_forinit(init: AstForInit, im: &mut IdentifierMap) -> Result<AstForIni
 }
 
 fn resolve_optional_exp(exp: Option<Exp>, im: &mut IdentifierMap) -> Result<Option<Exp>> {
-    exp.map_or(Ok(None), |exp| resolve_exp(exp, im).map(Some))
+    exp.map_or(Ok(None), |exp| resolve_exp(exp.into(), im).map(Some))
 }
 
 fn resolve_switch(mut switch: Switch, im: &mut IdentifierMap) -> Result<Statement> {
-    switch.ctrl_exp = resolve_exp(switch.ctrl_exp, im)?;
+    switch.ctrl_exp = resolve_exp(switch.ctrl_exp.into(), im)?;
     switch.body = resolve_statement(*switch.body, im).map(Box::new)?;
     Ok(Statement::Switch(switch))
 }
@@ -105,7 +105,7 @@ fn resolve_dcase(mut dcased: DCasedStatement, im: &mut IdentifierMap) -> Result<
 }
 
 fn resolve_while_st(mut while_st: While, im: &mut IdentifierMap) -> Result<Statement> {
-    while_st.condition = resolve_exp(while_st.condition, im)?;
+    while_st.condition = resolve_exp(while_st.condition.into(), im)?;
     while_st.body = resolve_statement(*while_st.body, im).map(Box::new)?;
     Ok(Statement::While(while_st))
 }
@@ -121,13 +121,13 @@ fn resolve_for_st(mut for_st: For, im: &mut IdentifierMap) -> Result<Statement> 
 }
 
 fn resolve_dowhile(mut dowhile: DoWhile, im: &mut IdentifierMap) -> Result<Statement> {
-    dowhile.condition = resolve_exp(dowhile.condition, im)?;
+    dowhile.condition = resolve_exp(dowhile.condition.into(), im)?;
     dowhile.body = resolve_statement(*dowhile.body, im).map(Box::new)?;
     Ok(Statement::DoWhile(dowhile))
 }
 
 fn resolve_if_st(mut if_st: If, im: &mut IdentifierMap) -> Result<Statement> {
-    if_st.condition = resolve_exp(if_st.condition, im)?;
+    if_st.condition = resolve_exp(if_st.condition.into(), im)?;
     if_st.then = resolve_statement(*if_st.then, im).map(Box::new)?;
     if_st.els = if_st.els.map_or(Ok(None), |bs| {
         resolve_statement(*bs, im).map(Box::new).map(Some)
@@ -162,8 +162,8 @@ fn resolve_statement(st: Statement, im: &mut IdentifierMap) -> Result<Statement>
         S::DCased(dcs) => resolve_dcase(dcs, im),
         S::Compound(block) => resolve_compound_st(block, im),
         S::Labeled(label, statement) => resolve_labeled_st(label, *statement, im),
-        S::Return(e) => resolve_exp(e, im).map(S::Return),
-        S::Exp(e) => resolve_exp(e, im).map(S::Exp),
+        S::Return(e) => resolve_exp(e.into(), im).map(S::Return),
+        S::Exp(e) => resolve_exp(e.into(), im).map(S::Exp),
         _ => Ok(st),
     }
 }
@@ -174,32 +174,32 @@ fn resolve_exp_call(name: Identifier, args: Vec<Exp>, im: &mut IdentifierMap) ->
         .ok_or(SemAnalysisError::UndeclaredFunction(name))?;
     let args = args
         .into_iter()
-        .map(|arg| resolve_exp(arg, im))
+        .map(|arg| resolve_exp(arg.into(), im))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(Exp::Call(new_name, args))
+    Ok(Exp::call(new_name, args))
 }
 
 fn resolve_exp_conditional(mut cond_exp: ConditionalExp, im: &mut IdentifierMap) -> Result<Exp> {
-    cond_exp.condition = resolve_exp(*cond_exp.condition, im).map(Box::new)?;
-    cond_exp.then = resolve_exp(*cond_exp.then, im).map(Box::new)?;
-    cond_exp.els = resolve_exp(*cond_exp.els, im).map(Box::new)?;
-    Ok(Exp::Conditional(cond_exp))
+    cond_exp.condition = resolve_exp((*cond_exp.condition).into(), im).map(Box::new)?;
+    cond_exp.then = resolve_exp((*cond_exp.then).into(), im).map(Box::new)?;
+    cond_exp.els = resolve_exp((*cond_exp.els).into(), im).map(Box::new)?;
+    Ok(Exp::conditional(cond_exp))
 }
 
 fn resolve_exp_assign(left: Exp, right: Exp, im: &mut IdentifierMap) -> Result<Exp> {
     if !left.is_var() {
         return Err(SemAnalysisError::WrongLvalue(left));
     }
-    let left = resolve_exp(left, im).map(Box::new)?;
-    let right = resolve_exp(right, im).map(Box::new)?;
-    Ok(Exp::Assignment(left, right))
+    let left = resolve_exp(left.into(), im).map(Box::new)?;
+    let right = resolve_exp(right.into(), im).map(Box::new)?;
+    Ok(Exp::assignment(left, right))
 }
 
 fn resolve_exp_incdec(op: AstUnaryOp, e: Exp, im: &mut IdentifierMap) -> Result<Exp> {
-    let exp = resolve_exp(e, im)?;
+    let exp = resolve_exp(UntypedExp::from(e), im)?;
     if exp.is_var() {
-        Ok(Exp::Unary(op, Box::new(exp)))
+        Ok(Exp::unary(op, Box::new(exp)))
     } else {
         Err(SemAnalysisError::WrongLvalue(exp))
     }
@@ -208,36 +208,37 @@ fn resolve_exp_incdec(op: AstUnaryOp, e: Exp, im: &mut IdentifierMap) -> Result<
 fn resolve_exp_var(name: Identifier, im: &mut IdentifierMap) -> Result<Exp> {
     im.get_uniq_name(&name)
         .ok_or(SemAnalysisError::VariableNotDeclared(name))
-        .map(Exp::Var)
+        .map(Exp::var)
 }
 
 fn resolve_exp_unary(op: AstUnaryOp, exp: Exp, im: &mut IdentifierMap) -> Result<Exp> {
-    let exp = resolve_exp(exp, im).map(Box::new)?;
-    Ok(Exp::Unary(op, exp))
+    let exp = resolve_exp(exp.into(), im).map(Box::new)?;
+    Ok(Exp::unary(op, exp))
 }
 
 fn resolve_exp_binary(op: AstBinaryOp, src: Exp, dst: Exp, im: &mut IdentifierMap) -> Result<Exp> {
-    let src = resolve_exp(src, im).map(Box::new)?;
-    let dst = resolve_exp(dst, im).map(Box::new)?;
-    Ok(Exp::Binary(op, src, dst))
+    let src = resolve_exp(src.into(), im).map(Box::new)?;
+    let dst = resolve_exp(dst.into(), im).map(Box::new)?;
+    Ok(Exp::binary(op, src, dst))
 }
 
-fn resolve_exp(exp: Exp, im: &mut IdentifierMap) -> Result<Exp> {
+fn resolve_exp(exp: UntypedExp, im: &mut IdentifierMap) -> Result<Exp> {
     match exp {
-        Exp::Unary(
+        UntypedExp::Cast(_t, e) => resolve_exp(UntypedExp::from(*e), im),
+        UntypedExp::Unary(
             op @ (AstUnaryOp::PostfixIncrement
             | AstUnaryOp::PrefixIncrement
             | AstUnaryOp::PostfixDecrement
             | AstUnaryOp::PrefixDecrement),
             e,
         ) => resolve_exp_incdec(op, *e, im),
-        Exp::Unary(op, exp) => resolve_exp_unary(op, *exp, im),
-        Exp::Conditional(cond_exp) => resolve_exp_conditional(cond_exp, im),
-        Exp::Assignment(left, right) => resolve_exp_assign(*left, *right, im),
-        Exp::Var(name) => resolve_exp_var(name, im),
-        Exp::Call(name, args) => resolve_exp_call(name, args, im),
-        Exp::Binary(op, src, dst) => resolve_exp_binary(op, *src, *dst, im),
-        Exp::Constant(_) => Ok(exp),
+        UntypedExp::Unary(op, exp) => resolve_exp_unary(op, *exp, im),
+        UntypedExp::Conditional(cond_exp) => resolve_exp_conditional(cond_exp, im),
+        UntypedExp::Assignment(left, right) => resolve_exp_assign(*left, *right, im),
+        UntypedExp::Var(name) => resolve_exp_var(name, im),
+        UntypedExp::Call(name, args) => resolve_exp_call(name, args, im),
+        UntypedExp::Binary(op, src, dst) => resolve_exp_binary(op, *src, *dst, im),
+        UntypedExp::Constant(_) => Ok(Exp::Untyped(exp)),
     }
 }
 
@@ -277,6 +278,7 @@ fn resolve_fundec(dec: FunDec, im: &mut IdentifierMap) -> Result<FunDec> {
         params: new_params,
         body: new_body,
         storage_class: dec.storage_class,
+        fun_type: dec.fun_type,
     })
 }
 
@@ -313,13 +315,14 @@ fn resolve_vardec(dec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
     let uniq_name = im.add_uniq_to_scope(dec.name);
     let mut exp = None;
     if let Some(e) = dec.init {
-        exp = Some(resolve_exp(e, im)?);
+        exp = Some(resolve_exp(e.into(), im)?);
     }
 
     Ok(VarDec {
         name: uniq_name,
         init: exp,
         storage_class: dec.storage_class,
+        var_type: dec.var_type,
     })
 }
 

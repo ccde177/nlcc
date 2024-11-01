@@ -12,11 +12,11 @@ use name_resolution::name_resolution;
 use std::fmt;
 use typecheck::check_types;
 
-pub use typecheck::SYM_TABLE;
+pub use typecheck::{StaticInit, SYM_TABLE};
 
 pub type Result<T> = std::result::Result<T, SemAnalysisError>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum SemAnalysisError {
     IdentifierRedeclaration(Identifier),
     LocalFunDefinition(Identifier),
@@ -95,12 +95,13 @@ impl fmt::Display for SemAnalysisError {
 
 impl std::error::Error for SemAnalysisError {}
 
+// The order must be:
+// name_resolution > [goto >] check_types > ... > label_loops > .. > collect_cases > ..
 pub fn validate(ast: Ast) -> Result<Ast> {
-    let mut validated = name_resolution(ast)
-        .and_then(label_loops)
-        .and_then(collect_cases)?;
-    ensure_goto_correctness(&mut validated)?;
-    let type_checked = check_types(validated)?;
+    let mut resolved = name_resolution(ast)?;
+    ensure_goto_correctness(&mut resolved)?;
 
-    Ok(type_checked)
+    check_types(resolved)
+        .and_then(label_loops)
+        .and_then(collect_cases)
 }

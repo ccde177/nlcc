@@ -178,7 +178,7 @@ fn parse_exp_conditional(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Ex
         els,
     };
 
-    Ok(Exp::Conditional(conditional))
+    Ok(Exp::conditional(conditional))
 }
 
 fn parse_exp_compassign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
@@ -189,21 +189,21 @@ fn parse_exp_compassign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp
     let op = t.compound_to_single();
     let op = AstBinaryOp::try_from(&op)?;
     let right = parse_exp(cursor, prec).map(Box::new)?;
-    let operation = Exp::Binary(op, Box::new(left.clone()), right);
-    Ok(Exp::Assignment(Box::new(left), Box::new(operation)))
+    let operation = Exp::binary(op, Box::new(left.clone()), right);
+    Ok(Exp::assignment(Box::new(left), Box::new(operation)))
 }
 
 fn parse_exp_assign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
     cursor.expect(&Token::Assign)?;
     let right = parse_exp(cursor, prec).map(Box::new)?;
     let left = Box::new(left);
-    Ok(Exp::Assignment(left, right))
+    Ok(Exp::assignment(left, right))
 }
 
 fn parse_exp_postfixop(cursor: &mut Cursor, _prec: u64, left: Exp) -> Result<Exp> {
     let op = parse_postfixop(cursor)?;
     let left = Box::new(left);
-    Ok(Exp::Unary(op, left))
+    Ok(Exp::unary(op, left))
 }
 
 fn parse_binary_op(cursor: &mut Cursor) -> Result<AstBinaryOp> {
@@ -214,7 +214,7 @@ fn parse_binary_op(cursor: &mut Cursor) -> Result<AstBinaryOp> {
 fn parse_exp_binary(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
     let op = parse_binary_op(cursor)?;
     let right = parse_exp(cursor, prec + 1).map(Box::new)?;
-    Ok(Exp::Binary(op, Box::new(left), right))
+    Ok(Exp::binary(op, Box::new(left), right))
 }
 
 fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
@@ -489,7 +489,7 @@ fn parse_unary_operation(cursor: &mut Cursor) -> Result<Exp> {
     let op = AstUnaryOp::try_from(next)?;
     let inner = parse_factor(cursor).map(Box::new)?;
 
-    Ok(Exp::Unary(op, inner))
+    Ok(Exp::unary(op, inner))
 }
 
 fn parse_arguments(cursor: &mut Cursor) -> Result<Vec<Exp>> {
@@ -511,18 +511,18 @@ fn parse_factor_call(cursor: &mut Cursor, name: String) -> Result<Exp> {
     cursor.expect(&Token::OpenParanth)?;
     let arguments = parse_arguments(cursor)?;
     cursor.expect(&Token::CloseParanth)?;
-    Ok(Exp::Call(name, arguments))
+    Ok(Exp::call(name, arguments))
 }
 
 fn parse_factor_postfixop(cursor: &mut Cursor, inner: Exp) -> Result<Exp> {
     let op = parse_postfixop(cursor)?;
     let inner = Box::new(inner);
-    Ok(Exp::Unary(op, inner))
+    Ok(Exp::unary(op, inner))
 }
 
 fn parse_factor_identifier(cursor: &mut Cursor) -> Result<Exp> {
     let name = parse_identifier(cursor)?;
-    let var = Exp::Var(name.clone());
+    let var = Exp::var(name.clone());
     let peek = cursor.peek_or_error()?;
     match peek {
         Token::OpenParanth => parse_factor_call(cursor, name),
@@ -566,7 +566,7 @@ fn parse_typecast(cursor: &mut Cursor) -> Result<Exp> {
     cursor.expect(&Token::CloseParanth)?;
 
     let subexp = parse_factor(cursor).map(Box::new)?;
-    Ok(Exp::Cast(rtype, subexp))
+    Ok(Exp::cast(rtype, subexp))
 }
 
 fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
@@ -575,12 +575,12 @@ fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
         Token::Identifier(_) => parse_factor_identifier(cursor),
         Token::OpenParanth => parse_typecast_or_subexp(cursor),
         Token::Constant(i) => {
-            let constant = Exp::Constant(AstConst::Int(*i as i32));
+            let constant = Exp::constant(AstConst::Int(*i as i32));
             cursor.bump();
             Ok(constant)
         }
         Token::LConstant(i) => {
-            let lconstant = Exp::Constant(AstConst::Long(*i as i64));
+            let lconstant = Exp::constant(AstConst::Long(*i as i64));
             cursor.bump();
             Ok(lconstant)
         }

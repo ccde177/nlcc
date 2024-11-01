@@ -3,7 +3,7 @@ use crate::ast::*;
 
 use std::collections::HashSet;
 
-type Cases = HashSet<(Option<u64>, Identifier)>;
+type Cases = HashSet<(Option<AstConst>, Identifier)>;
 
 fn collect_labeled_st(label: String, st: Statement) -> Result<(Statement, Cases)> {
     let (body, cases) = collect_statement(st)?;
@@ -28,11 +28,17 @@ fn collect_dcased(dcased: DCasedStatement) -> Result<(Statement, Cases)> {
     Ok((result, cases))
 }
 
+fn get_case_const_init(e: &UntypedExp) -> Result<AstConst> {
+    match e {
+        UntypedExp::Constant(c) => Ok(*c),
+        _ => Err(SemAnalysisError::NotAConstCase(Exp::Untyped(e.clone()))),
+    }
+}
+
 fn collect_cased(cased_st: CasedStatement) -> Result<(Statement, Cases)> {
     let CasedStatement { exp, body, label } = cased_st;
-    let u = exp
-        .get_const()
-        .ok_or(SemAnalysisError::NotAConstCase(exp.clone()))?;
+    let u = get_case_const_init(&exp)?;
+
     let (body, mut cases) = collect_statement(*body)?;
     let result_case = (Some(u), label.clone());
 

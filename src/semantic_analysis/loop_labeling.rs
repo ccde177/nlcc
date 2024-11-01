@@ -35,7 +35,7 @@ impl NameGenerator {
         }
     }
 
-    fn label_case(&self, case: u64) -> Option<Identifier> {
+    fn label_case(&self, case: AstConst) -> Option<Identifier> {
         self.switch_stack
             .last()
             .map(|sl| format!("case_{case}_{sl}"))
@@ -95,11 +95,16 @@ fn label_dcased(mut dcased: DCasedStatement, ng: &mut NameGenerator) -> Result<S
     Ok(Statement::DCased(dcased))
 }
 
+fn get_case_const_init(exp: &UntypedExp) -> Result<AstConst> {
+    match exp {
+        UntypedExp::Constant(c) => Ok(*c),
+        _ => Err(SemAnalysisError::NotAConstCase(Exp::Untyped(exp.clone()))),
+    }
+}
+
 fn label_cased(mut cased: CasedStatement, ng: &mut NameGenerator) -> Result<Statement> {
-    let const_exp = cased
-        .exp
-        .get_const()
-        .ok_or(SemAnalysisError::NotAConstCase(cased.exp.clone()))?;
+    let const_exp = get_case_const_init(&cased.exp)?;
+
     cased.label = ng
         .label_case(const_exp)
         .ok_or(SemAnalysisError::CaseNotInSwitch)?;

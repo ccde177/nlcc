@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 pub type Identifier = String;
 
 #[derive(Debug, Clone)]
@@ -12,8 +14,9 @@ pub struct AstBlock {
     pub items: AstBlockItems,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub enum Type {
+    #[default]
     Int,
     Long,
     Fun {
@@ -58,7 +61,7 @@ pub struct VarDec {
     pub var_type: Type,
 }
 
-pub type Cases = Vec<(Option<u64>, Identifier)>;
+pub type Cases = Vec<(Option<AstConst>, Identifier)>;
 
 #[derive(Debug, Clone)]
 pub struct DoWhile {
@@ -143,8 +146,78 @@ pub struct ConditionalExp {
     pub els: Box<Exp>,
 }
 
+impl From<Exp> for UntypedExp {
+    fn from(value: Exp) -> Self {
+        match value {
+            Exp::Untyped(ue) => ue,
+            Exp::Typed(_, ue) => ue,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Exp {
+    Typed(Type, UntypedExp),
+    Untyped(UntypedExp),
+}
+
+// Reminder: &Exp will act like &UntypedExp
+impl Deref for Exp {
+    type Target = UntypedExp;
+    fn deref(&self) -> &Self::Target {
+        let (Self::Typed(_, e) | Self::Untyped(e)) = self;
+        e
+    }
+}
+
+impl Exp {
+    pub fn get_type(&self) -> Option<Type> {
+        match self {
+            Self::Typed(t, _) => Some(t.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn set_type(self, t: Type) -> Self {
+        let (Self::Typed(_, e) | Self::Untyped(e)) = self;
+        Self::Typed(t, e)
+    }
+
+    pub fn conditional(c: ConditionalExp) -> Self {
+        Self::Untyped(UntypedExp::Conditional(c))
+    }
+
+    pub fn cast(t: Type, e: Box<Exp>) -> Self {
+        Self::Untyped(UntypedExp::Cast(t, e))
+    }
+
+    pub fn binary(op: AstBinaryOp, src: Box<Exp>, dst: Box<Exp>) -> Self {
+        Self::Untyped(UntypedExp::Binary(op, src, dst))
+    }
+
+    pub fn unary(op: AstUnaryOp, e: Box<Exp>) -> Self {
+        Self::Untyped(UntypedExp::Unary(op, e))
+    }
+
+    pub fn assignment(dst: Box<Exp>, src: Box<Exp>) -> Self {
+        Self::Untyped(UntypedExp::Assignment(dst, src))
+    }
+
+    pub fn call(name: Identifier, args: Vec<Exp>) -> Self {
+        Self::Untyped(UntypedExp::Call(name, args))
+    }
+
+    pub fn var(name: Identifier) -> Self {
+        Self::Untyped(UntypedExp::Var(name))
+    }
+
+    pub fn constant(cs: AstConst) -> Self {
+        Self::Untyped(UntypedExp::Constant(cs))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum UntypedExp {
     Conditional(ConditionalExp),
     Cast(Type, Box<Exp>),
     Binary(AstBinaryOp, Box<Exp>, Box<Exp>),
@@ -155,10 +228,56 @@ pub enum Exp {
     Constant(AstConst),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum AstConst {
     Int(i32),
     Long(i64),
+}
+
+impl AstConst {
+    pub fn new(t: &Type, v: i64) -> Option<Self> {
+        match t {
+            Type::Int => Some(AstConst::Int(v as i32)),
+            Type::Long => Some(AstConst::Long(v)),
+            _ => None,
+        }
+    }
+    pub fn get_type(&self) -> Type {
+        match self {
+            Self::Int(_) => Type::Int,
+            Self::Long(_) => Type::Long,
+        }
+    }
+
+    fn get_value_i64(&self) -> i64 {
+        match self {
+            Self::Int(i) => *i as i64,
+            Self::Long(i) => *i,
+        }
+    }
+
+    pub fn convert_to(&self, t: Type) -> Self {
+        let self_type = self.get_type();
+        let value = self.get_value_i64();
+        if t != self_type {
+            match t {
+                Type::Int => AstConst::Int(value as i32),
+                Type::Long => AstConst::Long(value as i64),
+                _ => *self,
+            }
+        } else {
+            *self
+        }
+    }
+}
+
+impl std::fmt::Display for AstConst {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AstConst::Int(i) => write!(f, "{i}"),
+            AstConst::Long(i) => write!(f, "{i}"),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -194,7 +313,53 @@ pub enum AstUnaryOp {
     PrefixIncrement,
 }
 
-impl Exp {
+impl AstBinaryOp {
+    pub fn is_shift(&self) -> bool {
+        matches!(self, Self::ShiftLeft | Self::ShiftRight)
+    }
+    pub fn is_eq(&self) -> bool {
+        matches!(
+            self,
+            Self::IsEqual
+                | Self::IsNotEqual
+                | Self::LessThan
+                | Self::GreaterThan
+                | Self::LessOrEqual
+                | Self::GreaterOrEqual
+        )
+    }
+}
+
+impl Type {
+    #[inline]
+    pub fn is_function(&self) -> bool {
+        matches!(self, Type::Fun { .. })
+    }
+
+    pub fn get_ptypes(&self) -> Option<&Vec<Type>> {
+        match self {
+            Self::Fun { ptypes, .. } => Some(ptypes),
+            _ => None,
+        }
+    }
+
+    pub fn get_rtype(&self) -> Option<&Type> {
+        match self {
+            Self::Fun { return_type, .. } => Some(return_type),
+            _ => None,
+        }
+    }
+
+    pub fn get_common(t1: &Self, t2: &Self) -> Self {
+        if t1 == t2 {
+            t1.clone()
+        } else {
+            Self::Long
+        }
+    }
+}
+
+impl UntypedExp {
     pub fn is_var(&self) -> bool {
         matches!(self, Self::Var(_))
     }
