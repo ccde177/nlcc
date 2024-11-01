@@ -3,10 +3,11 @@ mod driver_error;
 
 use args::Args;
 use driver_error::DriverError;
+use nlcc::ast::*;
 use nlcc::*;
-use std::path::PathBuf;
-
 use std::fs;
+use std::path::PathBuf;
+use std::process::exit;
 use std::process::Command;
 
 type BoxedError = Box<dyn std::error::Error>;
@@ -39,6 +40,7 @@ fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>, Box
 
     if args.lex {
         dbg!(&tokens);
+        exit(0)
     }
     Ok(tokens)
 }
@@ -48,15 +50,17 @@ fn parse(tokens: &[lexer::Token], args: &Args) -> Result<ast::Ast, BoxedError> {
     let ast = parser::parse(tokens)?;
     if args.parse {
         dbg!(&ast);
+        exit(0);
     }
     Ok(ast)
 }
 
 #[cfg(feature = "semantic_analysis")]
-fn validate(ast: ast::Ast, args: &Args) -> Result<ast::Ast, BoxedError> {
+fn validate(ast: ast::Ast, args: &Args) -> Result<Ast, BoxedError> {
     let validated_ast = semantic_analysis::validate(ast)?;
     if args.validate {
         dbg!(&validated_ast);
+        exit(0)
     }
     Ok(validated_ast)
 }
@@ -65,7 +69,8 @@ fn validate(ast: ast::Ast, args: &Args) -> Result<ast::Ast, BoxedError> {
 fn gen_tacky(ast: ast::Ast, args: &Args) -> Result<tacky::TAst, BoxedError> {
     let tacky = tacky::emit_tacky(validated_ast);
     if args.tacky {
-        dbg!(&tacky)
+        dbg!(&tacky);
+        exit(0);
     }
     Ok(tacky)
 }
@@ -75,6 +80,7 @@ fn gen_asm(tacky: tacky::TAst, args: &Args) -> codegen::AsmAst {
     let asm_ast = codegen::codegen(tacky);
     if args.codegen {
         dbg!(&asm_ast);
+        exit(0);
     }
     asm_ast
 }
@@ -87,6 +93,7 @@ fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), BoxedError> {
 
     if args.no_assemble {
         return Ok(());
+        exit(0);
     }
 
     // -pie is used here as a dummy value
@@ -121,41 +128,23 @@ pub fn main() -> Result<(), BoxedError> {
         let err = DriverError::InputFileDoesNotExist(filename);
         Err(err)?;
     }
+
     let preprocessed = preprocess(&args)?;
+
     #[cfg(feature = "lexer")]
     let tokens = tokenize(preprocessed, &args)?;
-
-    if args.lex {
-        return Ok(());
-    }
 
     #[cfg(feature = "parser")]
     let ast = parse(&tokens, &args)?;
 
-    if args.parse {
-        return Ok(());
-    }
-
     #[cfg(feature = "semantic_analysis")]
-    let validated_ast = vlidate(ast, &args)?;
-
-    if args.validate {
-        return Ok(());
-    }
+    let validated_ast = validate(ast, &args)?;
 
     #[cfg(feature = "tacky")]
     let tacky = gen_tacky(validated_ast, &args)?;
 
-    if args.tacky {
-        return Ok(());
-    }
-
     #[cfg(feature = "codegen")]
     let asm_ast = gen_asm(tacky, &args);
-
-    if args.codegen {
-        return Ok(());
-    }
 
     #[cfg(feature = "emission")]
     emit_asm(asm_ast, &args);
