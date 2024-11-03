@@ -92,14 +92,13 @@ fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), BoxedError> {
     fs::write(&asm_file, asm_ast.to_string())?;
 
     if args.no_assemble {
-        return Ok(());
         exit(0);
     }
 
     // -pie is used here as a dummy value
     let c_arg = if args.no_link { "-c" } else { "-pie" };
     let out_extension = if args.no_link { "o" } else { "" };
-    let mut out_file = args.input;
+    let mut out_file = args.input.clone();
     out_file.set_extension(out_extension);
 
     let status = Command::new("gcc")
@@ -147,7 +146,7 @@ pub fn main() -> Result<(), BoxedError> {
     let asm_ast = gen_asm(tacky, &args);
 
     #[cfg(feature = "emission")]
-    emit_asm(asm_ast, &args);
+    emit_asm(asm_ast, &args)?;
 
     Ok(())
 }

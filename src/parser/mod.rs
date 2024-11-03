@@ -569,13 +569,22 @@ fn parse_typecast(cursor: &mut Cursor) -> Result<Exp> {
     Ok(Exp::cast(rtype, subexp))
 }
 
+fn decide_constant(i: i64) -> Result<Exp> {
+    let cnst = if i <= i32::MAX as i64 {
+        AstConst::Int(i as i32)
+    } else {
+        AstConst::Long(i)
+    };
+    Ok(Exp::constant(cnst))
+}
+
 fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
     let peek = cursor.peek_or_error()?;
     match peek {
         Token::Identifier(_) => parse_factor_identifier(cursor),
         Token::OpenParanth => parse_typecast_or_subexp(cursor),
         Token::Constant(i) => {
-            let constant = Exp::constant(AstConst::Int(*i as i32));
+            let constant = decide_constant(*i)?;
             cursor.bump();
             Ok(constant)
         }

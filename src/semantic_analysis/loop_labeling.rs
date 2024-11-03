@@ -36,9 +36,12 @@ impl NameGenerator {
     }
 
     fn label_case(&self, case: AstConst) -> Option<Identifier> {
+        let negative = case.is_negative();
+        let changed_minus = if negative { "_" } else { "" };
+        let case = case.abs();
         self.switch_stack
             .last()
-            .map(|sl| format!("case_{case}_{sl}"))
+            .map(|sl| format!("case_{changed_minus}{case}_{sl}"))
     }
 
     fn label_default_case(&self) -> Option<Identifier> {

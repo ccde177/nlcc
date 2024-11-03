@@ -117,6 +117,18 @@ pub enum StaticInit {
     Long(i64),
 }
 
+impl StaticInit {
+    pub fn is_zero(&self) -> bool {
+        matches!(self, Self::Int(0) | Self::Long(0))
+    }
+    pub fn is_long(&self) -> bool {
+        matches!(self, Self::Long(_))
+    }
+    pub fn is_int(&self) -> bool {
+        matches!(self, Self::Int(_))
+    }
+}
+
 impl InitValue {
     #[inline]
     pub fn is_noinit(&self) -> bool {
@@ -154,7 +166,7 @@ impl IdAttr {
         }
     }
 
-    fn is_static(&self) -> bool {
+    pub fn is_static(&self) -> bool {
         matches!(self, Self::Static { .. })
     }
 
@@ -165,7 +177,7 @@ impl IdAttr {
         }
     }
 
-    fn is_fun_defined(&self) -> bool {
+    pub fn is_fun_defined(&self) -> bool {
         match self {
             Self::Fun { defined, .. } => *defined,
             _ => false,
@@ -316,7 +328,7 @@ fn typecheck_constant(constant: AstConst) -> Result<Exp> {
 
 fn typecheck_cast(t: Type, e: Exp, sym_table: &mut SymTable) -> Result<Exp> {
     let typed_inner = typecheck_exp(e.into(), sym_table).map(Box::new)?;
-    let cast_exp = Exp::cast(t, typed_inner);
+    let cast_exp = Exp::cast(t.clone(), typed_inner).set_type(t);
     Ok(cast_exp)
 }
 
@@ -533,14 +545,12 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
     Ok(typechecked)
 }
 
-fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
-    let mut initial_value = InitValue::NoInit;
+fn typecheck_vardec(mut vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
     if vardec.storage_class.is_extern() {
         if vardec.init.is_some() {
             return Err(SemAnalysisError::InitOnExternVar(vardec.name.clone()));
         }
         if let Some(old_dec) = sym_table.get(&vardec.name) {
-            dbg!(&old_dec.sym_type, &vardec.var_type);
             if old_dec.sym_type != vardec.var_type {
                 return Err(SemAnalysisError::IdentifierRedeclaration(
                     vardec.name.clone(),
@@ -557,9 +567,11 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
             sym_table.insert(vardec.name.clone(), entry);
         }
     } else if vardec.storage_class.is_static() {
-        if vardec.init.is_some() {
-            initial_value = get_static_init(vardec.init.as_ref().cloned().unwrap())?;
-        }
+        let initial_value = if vardec.init.is_some() {
+            get_static_init(vardec.init.as_ref().cloned().unwrap())?
+        } else {
+            InitValue::Tentative
+        };
         let entry = SymTableEntry {
             sym_type: vardec.var_type.clone(),
             attrs: IdAttr::Static {
@@ -576,7 +588,9 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
         sym_table.insert(vardec.name.clone(), entry);
 
         if let Some(init) = vardec.init.clone() {
-            typecheck_exp(init.into(), sym_table)?;
+            vardec.init = typecheck_exp(init.into(), sym_table)
+                .map(|e| convert_to(e, vardec.var_type.clone()))
+                .map(Some)?;
         }
     }
     Ok(vardec)

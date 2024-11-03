@@ -225,7 +225,7 @@ fn resolve_exp_binary(op: AstBinaryOp, src: Exp, dst: Exp, im: &mut IdentifierMa
 fn resolve_exp(exp: Exp, im: &mut IdentifierMap) -> Result<Exp> {
     let ue = exp.into();
     match ue {
-        UntypedExp::Cast(_t, e) => resolve_exp(*e, im),
+        UntypedExp::Cast(t, e) => resolve_exp(*e, im).map(|e| Exp::cast(t, Box::new(e))),
         UntypedExp::Unary(
             op @ (AstUnaryOp::PostfixIncrement
             | AstUnaryOp::PrefixIncrement

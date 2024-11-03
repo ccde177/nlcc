@@ -180,6 +180,7 @@ impl Exp {
     pub fn get_type(&self) -> Option<Type> {
         match self {
             Self::Typed(t, _) => Some(t.clone()),
+            Self::Untyped(UntypedExp::Cast(t, _)) => Some(t.clone()),
             _ => None,
         }
     }
@@ -241,6 +242,20 @@ pub enum AstConst {
 }
 
 impl AstConst {
+    pub fn is_negative(&self) -> bool {
+        match self {
+            Self::Int(i) => *i < 0,
+            Self::Long(l) => *l < 0,
+        }
+    }
+
+    pub fn abs(&self) -> Self {
+        match self {
+            Self::Int(i) => Self::Int(i32::abs(*i)),
+            Self::Long(l) => Self::Long(i64::abs(*l)),
+        }
+    }
+
     pub fn new(t: &Type, v: i64) -> Option<Self> {
         match t {
             Type::Int => Some(AstConst::Int(v as i32)),
@@ -317,6 +332,15 @@ pub enum AstUnaryOp {
     PrefixDecrement,
     PostfixIncrement,
     PrefixIncrement,
+}
+
+impl AstUnaryOp {
+    pub fn is_prefix_incdec(&self) -> bool {
+        matches!(self, Self::PrefixIncrement | Self::PrefixDecrement)
+    }
+    pub fn is_postfix_incdec(&self) -> bool {
+        matches!(self, Self::PostfixIncrement | Self::PostfixDecrement)
+    }
 }
 
 impl AstBinaryOp {

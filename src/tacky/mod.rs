@@ -92,15 +92,15 @@ impl TBinaryOp {
     pub fn is_shift(self) -> bool {
         matches!(self, TBinaryOp::ShiftLeft | TBinaryOp::ShiftRight)
     }
-    pub fn is_div(self) -> bool {
-        matches!(self, TBinaryOp::Divide)
+    pub fn is_divrem(self) -> bool {
+        matches!(self, TBinaryOp::Divide | TBinaryOp::Reminder)
     }
 
     pub fn is_rem(self) -> bool {
         matches!(self, TBinaryOp::Reminder)
     }
 
-    pub fn is_comp(self) -> bool {
+    pub fn is_relational(self) -> bool {
         matches!(
             self,
             Self::IsEqual
@@ -217,7 +217,7 @@ fn emit_logical_and(src: Exp, dst: Exp, instructions: &mut TInstructions) -> TVa
     let label_end = get_uniq_label();
     let result = new_tacky_var(Type::Int);
     let copy0 = TInstruction::Copy(TValue::Constant(AstConst::Int(0)), result.clone());
-    let copy1 = TInstruction::Copy(TValue::Constant(AstConst::Int(0)), result.clone());
+    let copy1 = TInstruction::Copy(TValue::Constant(AstConst::Int(1)), result.clone());
     let jumpend = TInstruction::Jump(label_end.clone());
 
     let v1 = emit_expression(src, instructions);
@@ -371,28 +371,25 @@ fn emit_cast(t: Type, e: Exp, instructions: &mut TInstructions) -> TValue {
 }
 
 fn emit_expression(exp: Exp, instructions: &mut TInstructions) -> TValue {
+    use AstBinaryOp as BinOp;
     use UntypedExp as UE;
     let t = exp
         .get_type()
         .expect("Should have type after type checking");
     let ue = exp.into();
     match ue {
-        UE::Cast(casting_t, e) => emit_cast(casting_t, *e, instructions),
-        UE::Call(name, args) => emit_call(name, args, instructions, t),
-        UE::Unary(op @ (AstUnaryOp::PostfixIncrement | AstUnaryOp::PostfixDecrement), exp) => {
-            emit_postfix_incdec(op, *exp, instructions)
-        }
-        UE::Unary(op @ (AstUnaryOp::PrefixIncrement | AstUnaryOp::PrefixDecrement), exp) => {
-            emit_prefix_incdec(op, *exp, instructions)
-        }
+        UE::Unary(op, exp) if op.is_postfix_incdec() => emit_postfix_incdec(op, *exp, instructions),
+        UE::Unary(op, exp) if op.is_prefix_incdec() => emit_prefix_incdec(op, *exp, instructions),
         UE::Unary(op, exp) => emit_unary(op, *exp, instructions),
-        UE::Binary(AstBinaryOp::LogicalAnd, src, dst) => emit_logical_and(*src, *dst, instructions),
-        UE::Binary(AstBinaryOp::LogicalOr, src, dst) => emit_logical_or(*src, *dst, instructions),
+        UE::Binary(BinOp::LogicalAnd, src, dst) => emit_logical_and(*src, *dst, instructions),
+        UE::Binary(BinOp::LogicalOr, src, dst) => emit_logical_or(*src, *dst, instructions),
         UE::Binary(op, exp1, exp2) => emit_binary(op, *exp1, *exp2, instructions, t),
         UE::Assignment(var, rhs) => emit_assignment(*var, *rhs, instructions),
-        UE::Var(name) => TValue::Var(name.clone()),
-        UE::Constant(u) => TValue::Constant(u),
+        UE::Cast(casting_t, e) => emit_cast(casting_t, *e, instructions),
+        UE::Call(name, args) => emit_call(name, args, instructions, t),
         UE::Conditional(cond) => emit_conditional(cond, instructions),
+        UE::Constant(u) => TValue::Constant(u),
+        UE::Var(name) => TValue::Var(name.clone()),
     }
 }
 
@@ -680,6 +677,9 @@ fn emit_static_symbols() -> Vec<TopLevelItem> {
             .expect("Should always be Some");
         if let Some(init) = entry.get_init() {
             let sym_type = entry.sym_type.clone();
+            if init.is_noinit() {
+                continue;
+            }
             let tentative_init = match sym_type {
                 Type::Int => StaticInit::Int(0),
                 Type::Long => StaticInit::Long(0),
