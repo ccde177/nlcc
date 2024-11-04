@@ -1,58 +1,12 @@
 mod cursor;
+mod parse_error;
 #[cfg(test)]
 mod parser_tests;
 
 use crate::ast::*;
 use crate::lexer::Token;
 use cursor::Cursor;
-
-use std::fmt::{Display, Formatter};
-
-pub type Result<T> = std::result::Result<T, ParseError>;
-#[derive(Debug, Eq, PartialEq)]
-pub enum ParseError {
-    ExpectedButGot(Token, Token),
-    ExpectedIdentifierButGot(Token),
-    UnexpectedToken(Token),
-    BadFactor(Token),
-    BadUnaryOp(Token),
-    TrailingComma,
-    UnexpectedEof,
-    InvalidTypeSpecifiers(Vec<Token>),
-    InvalidStorageClass(Vec<Token>),
-    BadForInit,
-}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        use ParseError as PE;
-        match self {
-            PE::ExpectedButGot(expected, got) => {
-                write!(f, "Expected token {expected:?}, but got {got:?}")
-            }
-            PE::ExpectedIdentifierButGot(token) => {
-                write!(f, "Expected identifier, but got {token:?}")
-            }
-            PE::UnexpectedToken(t) => write!(f, "Unexpected token {t:?}"),
-            PE::BadFactor(t) => write!(f, "Bad factor {t:?}"),
-            PE::BadUnaryOp(t) => write!(f, "Bad unary operator {t:?}"),
-            PE::UnexpectedEof => write!(f, "Reached unexpected EOF"),
-            PE::TrailingComma => write!(f, "Trailing comman in parameter list"),
-            PE::InvalidTypeSpecifiers(ss) => {
-                write!(f, "Invalid combination of type specifiers: {ss:?}")
-            }
-            PE::InvalidStorageClass(ss) => {
-                write!(f, "Invalid combination of storage class specifiers: {ss:?}")
-            }
-            PE::BadForInit => write!(
-                f,
-                "Function declarations are not allowed inside for loop initialization"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ParseError {}
+pub use parse_error::{ParseError, Result};
 
 #[allow(clippy::match_same_arms)]
 fn get_prec(token: &Token) -> u64 {
@@ -220,28 +174,18 @@ fn parse_exp_binary(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
 fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
     let mut left = parse_factor(cursor)?;
 
-    while let Some(next_token) = cursor.peek() {
+    while let Some(next_token) = cursor.peek().filter(|t| t.is_binaryop()) {
         let prec = get_prec(next_token);
-        if !next_token.is_binaryop() || prec < min_prec {
+        if prec < min_prec {
             break;
         }
-        match next_token {
-            t if t.is_compound_assign() => {
-                left = parse_exp_compassign(cursor, prec, left)?;
-            }
-            Token::QuestionMark => {
-                left = parse_exp_conditional(cursor, prec, left)?;
-            }
-            Token::Assign => {
-                left = parse_exp_assign(cursor, prec, left)?;
-            }
-            Token::Increment | Token::Decrement => {
-                left = parse_exp_postfixop(cursor, prec, left)?;
-            }
-            _ => {
-                left = parse_exp_binary(cursor, prec, left)?;
-            }
-        }
+        left = match next_token {
+            t if t.is_compound_assign() => parse_exp_compassign(cursor, prec, left)?,
+            Token::QuestionMark => parse_exp_conditional(cursor, prec, left)?,
+            Token::Assign => parse_exp_assign(cursor, prec, left)?,
+            Token::Increment | Token::Decrement => parse_exp_postfixop(cursor, prec, left)?,
+            _ => parse_exp_binary(cursor, prec, left)?,
+        };
     }
 
     Ok(left)
@@ -495,7 +439,7 @@ fn parse_unary_operation(cursor: &mut Cursor) -> Result<Exp> {
 fn parse_arguments(cursor: &mut Cursor) -> Result<Vec<Exp>> {
     let mut args = Vec::new();
 
-    while cursor.peek_or_error()? != &Token::CloseParanth {
+    while !cursor.peek_is(&Token::CloseParanth) {
         let comma = cursor.bump_if(&Token::Comma);
         if comma && args.is_empty() {
             return Err(ParseError::TrailingComma);
@@ -569,30 +513,20 @@ fn parse_typecast(cursor: &mut Cursor) -> Result<Exp> {
     Ok(Exp::cast(rtype, subexp))
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn decide_constant(i: i64) -> Result<Exp> {
-    let cnst = if i <= i64::from(i32::MAX) {
-        AstConst::Int(i as i32)
-    } else {
-        AstConst::Long(i)
-    };
-    Ok(Exp::constant(cnst))
-}
-
 fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
     let peek = cursor.peek_or_error()?;
     match peek {
         Token::Identifier(_) => parse_factor_identifier(cursor),
         Token::OpenParanth => parse_typecast_or_subexp(cursor),
         Token::Constant(i) => {
-            let constant = decide_constant(*i)?;
+            let constant = Exp::constant_from(*i);
             cursor.bump();
             Ok(constant)
         }
         Token::LConstant(i) => {
-            let lconstant = Exp::constant(AstConst::Long(*i));
+            let constant = Exp::constant(AstConst::Long(*i));
             cursor.bump();
-            Ok(lconstant)
+            Ok(constant)
         }
         t if t.is_unaryop() => parse_unary_operation(cursor),
         _ => Err(ParseError::BadFactor(peek.clone())),
@@ -600,8 +534,8 @@ fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
 }
 
 fn parse_statement(cursor: &mut Cursor) -> Result<Statement> {
-    let next = cursor.peek_or_error()?;
-    match next {
+    let peek = cursor.peek_or_error()?;
+    match peek {
         Token::Goto => parse_goto(cursor),
         Token::Case => parse_case(cursor),
         Token::KwDefault => parse_default_case(cursor),

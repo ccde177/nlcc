@@ -74,6 +74,10 @@ impl<'a> Cursor<'a> {
         self.peek().ok_or(ParseError::UnexpectedEof)
     }
 
+    pub fn peek_is(&self, t: &Token) -> bool {
+        self.peek() == Some(t)
+    }
+
     pub fn next_or_error(&mut self) -> Result<&Token> {
         let next = self
             .tokens
