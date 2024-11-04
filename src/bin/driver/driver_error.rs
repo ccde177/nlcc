@@ -2,6 +2,8 @@ use crate::lexer::LexError;
 use crate::parser::ParseError;
 use crate::semantic_analysis::SemAnalysisError;
 
+pub(super) type Result<T> = std::result::Result<T, DriverError>;
+
 #[allow(dead_code)]
 pub enum DriverError {
     InputFileDoesNotExist(String),

@@ -2,7 +2,7 @@ mod args;
 mod driver_error;
 
 use args::Args;
-use driver_error::DriverError;
+use driver_error::{DriverError, Result};
 use nlcc::ast::*;
 use nlcc::*;
 use std::fs;
@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::process::Command;
 
-fn preprocess(args: &Args) -> Result<PathBuf, DriverError> {
+fn preprocess(args: &Args) -> Result<PathBuf> {
     let mut preprocessed = args.input.clone();
     preprocessed.set_extension("i");
 
@@ -30,7 +30,7 @@ fn preprocess(args: &Args) -> Result<PathBuf, DriverError> {
 }
 
 #[cfg(feature = "lexer")]
-fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>, DriverError> {
+fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>> {
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
 
     let tokens = lexer::lex(&source)?;
@@ -45,7 +45,7 @@ fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>, Dri
 }
 
 #[cfg(feature = "parser")]
-fn parse(tokens: &[lexer::Token], args: &Args) -> Result<ast::Ast, DriverError> {
+fn parse(tokens: &[lexer::Token], args: &Args) -> Result<Ast> {
     let ast = parser::parse(tokens)?;
     if args.parse {
         dbg!(&ast);
@@ -55,7 +55,7 @@ fn parse(tokens: &[lexer::Token], args: &Args) -> Result<ast::Ast, DriverError> 
 }
 
 #[cfg(feature = "semantic_analysis")]
-fn validate(ast: ast::Ast, args: &Args) -> Result<Ast, DriverError> {
+fn validate(ast: ast::Ast, args: &Args) -> Result<Ast> {
     let validated_ast = semantic_analysis::validate(ast)?;
     if args.validate {
         dbg!(&validated_ast);
@@ -85,7 +85,7 @@ fn gen_asm(tacky: tacky::TAst, args: &Args) -> codegen::AsmAst {
 }
 
 #[cfg(feature = "emission")]
-fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), DriverError> {
+fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<()> {
     let mut asm_file = args.input.clone();
     asm_file.set_extension("s");
     fs::write(&asm_file, asm_ast.to_string())?;
@@ -117,7 +117,7 @@ fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), DriverError> {
 }
 
 #[allow(unused_variables)]
-pub fn main() -> Result<(), DriverError> {
+pub fn main() -> Result<()> {
     let args = Args::parse();
 
     let file_exists = fs::exists(&args.input)?;
