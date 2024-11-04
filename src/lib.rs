@@ -6,6 +6,8 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::must_use_candidate)]
+#![allow(clippy::return_self_not_must_use)]
+#![allow(clippy::cast_possible_truncation)]
 
 pub mod ast;
 #[cfg(feature = "codegen")]

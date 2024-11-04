@@ -250,6 +250,7 @@ fn typecheck_assignment(e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Ex
     Ok(assign)
 }
 
+#[allow(clippy::unnecessary_map_on_constructor)]
 fn typecheck_unary(op: AstUnaryOp, exp: Exp, sym_table: &mut SymTable) -> Result<Exp> {
     let typechecked_inner = typecheck_exp(exp.into(), sym_table)?;
     let rtype = match op {
@@ -319,6 +320,7 @@ fn typecheck_conditional(cond: ConditionalExp, sym_table: &mut SymTable) -> Resu
     Ok(Exp::conditional(cond).set_type(common_type))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn typecheck_constant(constant: AstConst) -> Result<Exp> {
     match constant {
         c @ AstConst::Int(_) => Ok(Exp::constant(c).set_type(Type::Int)),
@@ -399,7 +401,7 @@ fn convert_case(e: Exp, t: Type) -> Result<Exp> {
         _ => Err(SemAnalysisError::NotAConstCase(e)),
     }?;
 
-    let c = c.convert_to(t.clone());
+    let c = c.convert_to(&t);
     Ok(Exp::constant(c).set_type(t))
 }
 fn typecheck_cased_st(mut cased: CasedStatement, sym_table: &mut SymTable) -> Result<Statement> {
@@ -568,7 +570,7 @@ fn typecheck_vardec(mut vardec: VarDec, sym_table: &mut SymTable) -> Result<VarD
         }
     } else if vardec.storage_class.is_static() {
         let initial_value = if vardec.init.is_some() {
-            get_static_init(vardec.init.as_ref().cloned().unwrap())?
+            get_static_init(vardec.init.clone().unwrap())?
         } else {
             InitValue::Tentative
         };
@@ -625,8 +627,8 @@ fn typecheck_block(block: AstBlock, sym_table: &mut SymTable) -> Result<AstBlock
 fn get_static_init(init: Exp) -> Result<InitValue> {
     if let UntypedExp::Constant(init) = init.into() {
         match init {
-            AstConst::Int(i) => Ok(i).map(StaticInit::Int),
-            AstConst::Long(i) => Ok(i).map(StaticInit::Long),
+            AstConst::Int(i) => Ok(StaticInit::Int(i)),
+            AstConst::Long(i) => Ok(StaticInit::Long(i)),
         }
         .map(InitValue::Initial)
     } else {

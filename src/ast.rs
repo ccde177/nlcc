@@ -149,8 +149,7 @@ pub struct ConditionalExp {
 impl From<Exp> for UntypedExp {
     fn from(value: Exp) -> Self {
         match value {
-            Exp::Untyped(ue) => ue,
-            Exp::Typed(_, ue) => ue,
+            Exp::Untyped(ue) | Exp::Typed(_, ue) => ue,
         }
     }
 }
@@ -179,9 +178,8 @@ impl Deref for Exp {
 impl Exp {
     pub fn get_type(&self) -> Option<Type> {
         match self {
-            Self::Typed(t, _) => Some(t.clone()),
-            Self::Untyped(UntypedExp::Cast(t, _)) => Some(t.clone()),
-            _ => None,
+            Self::Typed(t, _) | Self::Untyped(UntypedExp::Cast(t, _)) => Some(t.clone()),
+            Self::Untyped(_) => None,
         }
     }
 
@@ -256,13 +254,15 @@ impl AstConst {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn new(t: &Type, v: i64) -> Option<Self> {
         match t {
             Type::Int => Some(AstConst::Int(v as i32)),
             Type::Long => Some(AstConst::Long(v)),
-            _ => None,
+            Type::Fun { .. } => None,
         }
     }
+
     pub fn get_type(&self) -> Type {
         match self {
             Self::Int(_) => Type::Int,
@@ -272,22 +272,22 @@ impl AstConst {
 
     fn get_value_i64(&self) -> i64 {
         match self {
-            Self::Int(i) => *i as i64,
+            Self::Int(i) => i64::from(*i),
             Self::Long(i) => *i,
         }
     }
 
-    pub fn convert_to(&self, t: Type) -> Self {
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn convert_to(&self, t: &Type) -> Self {
         let self_type = self.get_type();
         let value = self.get_value_i64();
-        if t != self_type {
-            match t {
-                Type::Int => AstConst::Int(value as i32),
-                Type::Long => AstConst::Long(value as i64),
-                _ => *self,
-            }
-        } else {
-            *self
+        if t == &self_type {
+            return *self;
+        }
+        match t {
+            Type::Int => AstConst::Int(value as i32),
+            Type::Long => AstConst::Long(value),
+            Type::Fun { .. } => *self,
         }
     }
 }

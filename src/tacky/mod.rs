@@ -353,14 +353,14 @@ fn new_tacky_var(t: Type) -> TValue {
     TValue::Var(var_name)
 }
 
-fn emit_cast(t: Type, e: Exp, instructions: &mut TInstructions) -> TValue {
+fn emit_cast(t: &Type, e: Exp, instructions: &mut TInstructions) -> TValue {
     let inner_type = e.get_type().expect("Should have type after typechecking");
     let result = emit_expression(e, instructions);
-    if t == inner_type {
+    if t == &inner_type {
         return result;
     }
     let dst = new_tacky_var(t.clone());
-    let cast_instr = if t == Type::Long {
+    let cast_instr = if t == &Type::Long {
         TInstruction::SignExtend(result, dst.clone())
     } else {
         TInstruction::Truncate(result, dst.clone())
@@ -385,7 +385,7 @@ fn emit_expression(exp: Exp, instructions: &mut TInstructions) -> TValue {
         UE::Binary(BinOp::LogicalOr, src, dst) => emit_logical_or(*src, *dst, instructions),
         UE::Binary(op, exp1, exp2) => emit_binary(op, *exp1, *exp2, instructions, t),
         UE::Assignment(var, rhs) => emit_assignment(*var, *rhs, instructions),
-        UE::Cast(casting_t, e) => emit_cast(casting_t, *e, instructions),
+        UE::Cast(casting_t, e) => emit_cast(&casting_t, *e, instructions),
         UE::Call(name, args) => emit_call(name, args, instructions, t),
         UE::Conditional(cond) => emit_conditional(cond, instructions),
         UE::Constant(u) => TValue::Constant(u),
@@ -683,10 +683,10 @@ fn emit_static_symbols() -> Vec<TopLevelItem> {
             let tentative_init = match sym_type {
                 Type::Int => StaticInit::Int(0),
                 Type::Long => StaticInit::Long(0),
-                _ => continue,
+                Type::Fun { .. } => continue,
             };
             let init = init.get_static_init().unwrap_or(tentative_init);
-            let name = symbol.to_owned();
+            let name = symbol.clone();
             let global = entry.is_global();
             let staticvar = StaticVariable {
                 name,

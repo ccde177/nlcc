@@ -248,7 +248,7 @@ fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
 }
 
 fn parse_type(types: &[Token]) -> Result<Type> {
-    match &types[..] {
+    match types {
         [Token::Long, Token::Int] | [Token::Int, Token::Long] | [Token::Long] => Ok(Type::Long),
         [Token::Int] => Ok(Type::Int),
         _ => Err(ParseError::InvalidTypeSpecifiers(types.to_vec())),
@@ -256,7 +256,7 @@ fn parse_type(types: &[Token]) -> Result<Type> {
 }
 
 fn parse_storage_class(classes: &[Token]) -> Result<StorageClass> {
-    match &classes[..] {
+    match classes {
         [Token::Extern] => Ok(StorageClass::Extern),
         [Token::Static] => Ok(StorageClass::Static),
         [] => Ok(StorageClass::Auto),
@@ -569,8 +569,9 @@ fn parse_typecast(cursor: &mut Cursor) -> Result<Exp> {
     Ok(Exp::cast(rtype, subexp))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn decide_constant(i: i64) -> Result<Exp> {
-    let cnst = if i <= i32::MAX as i64 {
+    let cnst = if i <= i64::from(i32::MAX) {
         AstConst::Int(i as i32)
     } else {
         AstConst::Long(i)
@@ -589,7 +590,7 @@ fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
             Ok(constant)
         }
         Token::LConstant(i) => {
-            let lconstant = Exp::constant(AstConst::Long(*i as i64));
+            let lconstant = Exp::constant(AstConst::Long(*i));
             cursor.bump();
             Ok(lconstant)
         }
