@@ -2,6 +2,8 @@ use super::{LexError, Result};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token {
+    Unsigned,
+    Signed,
     Int,
     Identifier(String),
     OpenParanth,
@@ -9,8 +11,10 @@ pub enum Token {
     CloseParanth,
     OpenCurly,
     Return,
+    UnsignedConst(u64),
     Constant(i64),
     LConstant(i64),
+    UnsignedLConst(u64),
     Semicolon,
     CloseCurly,
     Tilde,
@@ -191,6 +195,8 @@ impl TryFrom<char> for Token {
 impl From<&str> for Token {
     fn from(s: &str) -> Self {
         match s {
+            "unsigned" => Self::Unsigned,
+            "signed" => Self::Signed,
             "int" => Self::Int,
             "long" => Self::Long,
             "return" => Self::Return,

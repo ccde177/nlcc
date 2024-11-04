@@ -78,7 +78,13 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
         count += 1;
     }
 
-    let is_long = cursor.bump_if('l') || cursor.bump_if('L');
+    let mut is_long = cursor.bump_if('l') || cursor.bump_if('L');
+    let is_unsigned = cursor.bump_if('u') || cursor.bump_if('U');
+
+    //Retry in case of ul/UL/etc
+    if !is_long {
+        is_long = cursor.bump_if('l') || cursor.bump_if('L');
+    }
 
     if let Some(next) = cursor.peek() {
         if next.is_alphabetic() || next == '_' {
@@ -87,16 +93,21 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
     }
 
     let const_str = &start[..count];
-    let constant = if is_long {
-        const_str
-            .parse::<i64>()
-            .map(Token::LConstant)
-            .expect("Should never fail")
+
+    let constant = if is_unsigned {
+        let parsed = const_str.parse::<u64>().expect("Should never fail");
+        if is_long {
+            Token::UnsignedLConst(parsed)
+        } else {
+            Token::UnsignedConst(parsed)
+        }
     } else {
-        const_str
-            .parse::<i64>()
-            .map(Token::Constant)
-            .expect("Should never fail")
+        let parsed = const_str.parse::<i64>().expect("Should never fail");
+        if is_long {
+            Token::LConstant(parsed)
+        } else {
+            Token::Constant(parsed)
+        }
     };
 
     Ok(constant)
