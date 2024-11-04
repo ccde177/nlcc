@@ -86,7 +86,7 @@ impl SymTableEntry {
         self.attrs.is_global()
     }
     pub fn get_init(&self) -> Option<InitValue> {
-        self.attrs.get_init()
+        self.attrs.get_init().filter(InitValue::is_not_noinit)
     }
 }
 
@@ -116,6 +116,10 @@ impl StaticInit {
 }
 
 impl InitValue {
+    #[inline]
+    pub fn is_not_noinit(&self) -> bool {
+        !self.is_noinit()
+    }
     #[inline]
     pub fn is_noinit(&self) -> bool {
         matches!(self, Self::NoInit)

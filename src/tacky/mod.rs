@@ -497,62 +497,55 @@ fn emit_block_items(blockitems: AstBlockItems) -> TInstructions {
 
 fn emit_fundec(f: FunDec) -> Option<TFunction> {
     let FunDec {
-        name,
-        params,
-        body,
-        storage_class: _,
-        fun_type: _,
+        name, params, body, ..
     } = f;
-    if let Some(body) = body {
-        let AstBlock { items } = body;
-        let mut body = emit_block_items(items);
-        body.push(TInstruction::Return(TValue::Constant(AstConst::Int(0))));
 
-        let st_entry = SYM_TABLE.get_symbol(&name).expect("Should never fail");
-        let f = TFunction {
+    body.map(|block| {
+        let AstBlock { items } = block;
+        let mut body = emit_block_items(items);
+        let always_return_0 = TInstruction::Return(TValue::Constant(AstConst::Int(0)));
+        body.push(always_return_0);
+        let global = SYM_TABLE
+            .get_symbol(&name)
+            .expect("Should never fail")
+            .is_global();
+        TFunction {
             name,
             params,
             body,
-            global: st_entry.is_global(),
-        };
-        Some(f)
-    } else {
-        None
-    }
+            global,
+        }
+    })
 }
 
 fn emit_toplevel_dec(dec: Declaration) -> Option<TopLevelItem> {
+    use Declaration as D;
+
     match dec {
-        Declaration::Fun(fundec) => emit_fundec(fundec).map(TopLevelItem::Fun),
+        D::Fun(fundec) => emit_fundec(fundec).map(TopLevelItem::Fun),
         // It will be processed later during emit_static_symbols
-        Declaration::Var(_) => None,
+        D::Var(_) => None,
     }
 }
 
 fn emit_static_symbols() -> Vec<TopLevelItem> {
     let mut defs = Vec::new();
-    for symbol in SYM_TABLE.get_keys() {
-        let entry = SYM_TABLE
-            .get_symbol(&symbol)
-            .expect("Should always be Some");
+    for name in SYM_TABLE.get_keys() {
+        let entry = SYM_TABLE.get_symbol(&name).expect("Should always be Some");
         if let Some(init) = entry.get_init() {
-            let sym_type = entry.sym_type.clone();
-            if init.is_noinit() {
-                continue;
-            }
-            let tentative_init = match sym_type {
+            let tentative_init = match entry.sym_type {
                 Type::Int => StaticInit::Int(0),
                 Type::Long => StaticInit::Long(0),
                 Type::Fun { .. } => continue,
             };
             let init = init.get_static_init().unwrap_or(tentative_init);
-            let name = symbol.clone();
             let global = entry.is_global();
+            let var_type = entry.sym_type.clone();
             let staticvar = StaticVariable {
                 name,
                 global,
                 init,
-                var_type: sym_type,
+                var_type,
             };
             defs.push(TopLevelItem::Var(staticvar));
         }
