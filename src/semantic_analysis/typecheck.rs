@@ -6,12 +6,6 @@ use std::iter::IntoIterator;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 
-// Right now every function in this module is gonna return Ok(input) without changing it.
-// So whole type checking phase is not gonna change the AST.
-// However, later on type checking phase WILL change the AST
-// and that is why I am gonna stick to this redundancy:
-// to make it easier to introduce changes later.
-
 // Global symbol table
 pub static SYM_TABLE: GlobalSymTable = GlobalSymTable::new();
 pub struct GlobalSymTable {
@@ -50,14 +44,6 @@ impl GlobalSymTable {
             .read()
             .expect("Should not be poisoned");
         inner.keys().cloned().collect()
-        /*
-        self.inner
-            .get()
-            .expect("Always initialized at this point")
-            .keys()
-            .map(String::as_str)
-            .collect()
-        */
     }
 
     pub fn get_symbol(&self, sym: &str) -> Option<SymTableEntry> {
@@ -82,8 +68,8 @@ impl GlobalSymTable {
     }
 }
 
-// Current function return type which is required for
-// return statment typechecking
+// Current function return type is required for
+// typechecking return statment
 static CURRENT_RTYPE: RwLock<Type> = RwLock::new(Type::Int);
 // Current Switch statement controlling expression type
 // is required for casting case expressions
@@ -166,6 +152,13 @@ impl IdAttr {
         }
     }
 
+    pub fn is_tentative_init(&self) -> bool {
+        match self {
+            Self::Static { init_val, .. } => init_val.is_tentative(),
+            _ => false,
+        }
+    }
+
     pub fn is_static(&self) -> bool {
         matches!(self, Self::Static { .. })
     }
@@ -220,11 +213,6 @@ fn typecheck_call(name: Identifier, args: Vec<Exp>, sym_table: &mut SymTable) ->
 
     let call_exp = Exp::call(name, converted_args).set_type(*rtype);
     Ok(call_exp)
-
-    //    let args = args
-    //        .into_iter()
-    //        .map(|exp| typecheck_exp(exp, sym_table))
-    //        .collect::<Result<Vec<Exp>>>()?;
 }
 
 fn typecheck_var(name: Identifier, sym_table: &mut SymTable) -> Result<Exp> {
@@ -303,8 +291,8 @@ fn convert_to(e: Exp, t: Type) -> Exp {
 
 fn typecheck_conditional(cond: ConditionalExp, sym_table: &mut SymTable) -> Result<Exp> {
     let condition = typecheck_exp((*cond.condition).into(), sym_table).map(Box::new)?;
-    let then = typecheck_exp((*cond.then).into(), sym_table)?; //.map(Box::new)?;
-    let els = typecheck_exp((*cond.els).into(), sym_table)?; //.map(Box::new)?;
+    let then = typecheck_exp((*cond.then).into(), sym_table)?;
+    let els = typecheck_exp((*cond.els).into(), sym_table)?;
 
     let then_type = then.get_type().expect("Should always have type");
     let els_type = els.get_type().expect("Should always have type");
@@ -335,15 +323,16 @@ fn typecheck_cast(t: Type, e: Exp, sym_table: &mut SymTable) -> Result<Exp> {
 }
 
 fn typecheck_exp(exp: UntypedExp, sym_table: &mut SymTable) -> Result<Exp> {
+    use UntypedExp as UE;
     match exp {
-        UntypedExp::Cast(t, e) => typecheck_cast(t, *e, sym_table),
-        UntypedExp::Assignment(e1, e2) => typecheck_assignment(*e1, *e2, sym_table),
-        UntypedExp::Unary(op, exp) => typecheck_unary(op, *exp, sym_table),
-        UntypedExp::Binary(op, src, dst) => typecheck_binary(op, *src, *dst, sym_table),
-        UntypedExp::Conditional(cond) => typecheck_conditional(cond, sym_table),
-        UntypedExp::Call(f, args) => typecheck_call(f, args, sym_table),
-        UntypedExp::Var(name) => typecheck_var(name, sym_table),
-        UntypedExp::Constant(c) => typecheck_constant(c),
+        UE::Cast(t, e) => typecheck_cast(t, *e, sym_table),
+        UE::Assignment(e1, e2) => typecheck_assignment(*e1, *e2, sym_table),
+        UE::Unary(op, exp) => typecheck_unary(op, *exp, sym_table),
+        UE::Binary(op, src, dst) => typecheck_binary(op, *src, *dst, sym_table),
+        UE::Conditional(cond) => typecheck_conditional(cond, sym_table),
+        UE::Call(f, args) => typecheck_call(f, args, sym_table),
+        UE::Var(name) => typecheck_var(name, sym_table),
+        UE::Constant(c) => typecheck_constant(c),
     }
 }
 
@@ -547,54 +536,67 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
     Ok(typechecked)
 }
 
-fn typecheck_vardec(mut vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
-    if vardec.storage_class.is_extern() {
-        if vardec.init.is_some() {
-            return Err(SemAnalysisError::InitOnExternVar(vardec.name.clone()));
+fn typecheck_vardec_extern(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
+    if vardec.init.is_some() {
+        return Err(SemAnalysisError::InitOnExternVar(vardec.name.clone()));
+    }
+    if let Some(old_dec) = sym_table.get(&vardec.name) {
+        if old_dec.sym_type != vardec.var_type {
+            return Err(SemAnalysisError::IdentifierRedeclaration(
+                vardec.name.clone(),
+            ));
         }
-        if let Some(old_dec) = sym_table.get(&vardec.name) {
-            if old_dec.sym_type != vardec.var_type {
-                return Err(SemAnalysisError::IdentifierRedeclaration(
-                    vardec.name.clone(),
-                ));
-            }
-        } else {
-            let entry = SymTableEntry {
-                sym_type: vardec.var_type.clone(),
-                attrs: IdAttr::Static {
-                    init_val: InitValue::NoInit,
-                    global: true,
-                },
-            };
-            sym_table.insert(vardec.name.clone(), entry);
-        }
-    } else if vardec.storage_class.is_static() {
-        let initial_value = if vardec.init.is_some() {
-            get_static_init(vardec.init.clone().unwrap())?
-        } else {
-            InitValue::Tentative
-        };
-        let entry = SymTableEntry {
-            sym_type: vardec.var_type.clone(),
-            attrs: IdAttr::Static {
-                init_val: initial_value,
-                global: false,
-            },
-        };
-        sym_table.insert(vardec.name.clone(), entry);
     } else {
         let entry = SymTableEntry {
             sym_type: vardec.var_type.clone(),
-            attrs: IdAttr::Local,
+            attrs: IdAttr::Static {
+                init_val: InitValue::NoInit,
+                global: true,
+            },
         };
         sym_table.insert(vardec.name.clone(), entry);
-
-        if let Some(init) = vardec.init.clone() {
-            vardec.init = typecheck_exp(init.into(), sym_table)
-                .map(|e| convert_to(e, vardec.var_type.clone()))
-                .map(Some)?;
-        }
     }
+    Ok(vardec)
+}
+
+fn typecheck_vardec_auto(mut vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
+    let entry = SymTableEntry {
+        sym_type: vardec.var_type.clone(),
+        attrs: IdAttr::Local,
+    };
+    sym_table.insert(vardec.name.clone(), entry);
+
+    if let Some(init) = vardec.init.clone() {
+        vardec.init = typecheck_exp(init.into(), sym_table)
+            .map(|e| convert_to(e, vardec.var_type.clone()))
+            .map(Some)?;
+    }
+
+    Ok(vardec)
+}
+
+fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
+    match vardec.storage_class {
+        StorageClass::Static => typecheck_vardec_static(vardec, sym_table),
+        StorageClass::Extern => typecheck_vardec_extern(vardec, sym_table),
+        StorageClass::Auto => typecheck_vardec_auto(vardec, sym_table),
+    }
+}
+
+fn typecheck_vardec_static(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
+    let initial_value = if vardec.init.is_some() {
+        get_static_init(vardec.init.clone().unwrap())?
+    } else {
+        InitValue::Tentative
+    };
+    let entry = SymTableEntry {
+        sym_type: vardec.var_type.clone(),
+        attrs: IdAttr::Static {
+            init_val: initial_value,
+            global: false,
+        },
+    };
+    sym_table.insert(vardec.name.clone(), entry);
     Ok(vardec)
 }
 
@@ -654,9 +656,11 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
         if old_dec.sym_type != vardec.var_type {
             return Err(FunRedefErr(vardec.name.clone()));
         }
-        if vardec.storage_class.is_extern() {
+        let is_extern = vardec.storage_class.is_extern();
+        let is_old_global = old_dec.attrs.is_global();
+        if is_extern {
             global = old_dec.attrs.is_global();
-        } else if old_dec.attrs.is_global() != global {
+        } else if is_old_global != global {
             return Err(LinkConfErr(vardec.name.clone()));
         }
 
@@ -665,7 +669,7 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
                 return Err(IdRedecErr(vardec.name.clone()));
             }
             init_val = old_dec.attrs.get_init().unwrap();
-        } else if !init_val.is_const() && old_dec.attrs.get_init().unwrap().is_tentative() {
+        } else if !init_val.is_const() && old_dec.attrs.is_tentative_init() {
             init_val = InitValue::Tentative;
         }
     }
@@ -693,7 +697,7 @@ pub fn check_types(ast: Ast) -> Result<Ast> {
     let declarations = declarations
         .into_iter()
         .map(|dec| typecheck_toplevel_dec(dec, &mut sym_table))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<_>>()?;
     let ast = Ast { declarations };
     SYM_TABLE.init(sym_table);
 
