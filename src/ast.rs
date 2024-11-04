@@ -219,6 +219,16 @@ impl Exp {
     pub fn constant(cs: AstConst) -> Self {
         Self::Untyped(UntypedExp::Constant(cs))
     }
+
+    pub fn constant_from(i: i64) -> Self {
+        let cs = if i < i64::from(i32::MAX) {
+            AstConst::Int(i as i32)
+        } else {
+            AstConst::Long(i)
+        };
+
+        Self::Untyped(UntypedExp::Constant(cs))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -281,10 +291,8 @@ impl AstConst {
     pub fn convert_to(&self, t: &Type) -> Self {
         let self_type = self.get_type();
         let value = self.get_value_i64();
-        if t == &self_type {
-            return *self;
-        }
         match t {
+            t if t == &self_type => *self,
             Type::Int => AstConst::Int(value as i32),
             Type::Long => AstConst::Long(value),
             Type::Fun { .. } => *self,

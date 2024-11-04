@@ -323,8 +323,8 @@ fn typecheck_conditional(cond: ConditionalExp, sym_table: &mut SymTable) -> Resu
 #[allow(clippy::unnecessary_wraps)]
 fn typecheck_constant(constant: AstConst) -> Result<Exp> {
     match constant {
-        c @ AstConst::Int(_) => Ok(Exp::constant(c).set_type(Type::Int)),
-        c @ AstConst::Long(_) => Ok(Exp::constant(c).set_type(Type::Long)),
+        AstConst::Int(_) => Ok(Exp::constant(constant).set_type(Type::Int)),
+        AstConst::Long(_) => Ok(Exp::constant(constant).set_type(Type::Long)),
     }
 }
 
