@@ -3,7 +3,8 @@ mod driver_error;
 
 use args::Args;
 use driver_error::{DriverError, Result};
-use nlcc::ast::*;
+#[allow(unused_imports)]
+use nlcc::ast::Ast;
 use nlcc::*;
 use std::fs;
 use std::path::PathBuf;
