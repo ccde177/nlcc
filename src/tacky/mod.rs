@@ -1,117 +1,12 @@
 #[cfg(test)]
 mod tacky_tests;
+mod tast;
 
 use crate::ast::*;
 use crate::semantic_analysis::{StaticInit, SYM_TABLE};
+pub use tast::*;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-pub type Identifier = String;
-pub type TInstructions = Vec<TInstruction>;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TAst {
-    pub toplevel_items: Vec<TopLevelItem>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct TFunction {
-    pub name: Identifier,
-    pub params: Vec<Identifier>,
-    pub body: TInstructions,
-    pub global: bool,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct StaticVariable {
-    pub name: Identifier,
-    pub global: bool,
-    pub init: StaticInit,
-    pub var_type: Type,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum TopLevelItem {
-    Fun(TFunction),
-    Var(StaticVariable),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TInstruction {
-    Truncate(TValue, TValue),   //(src, dst)
-    SignExtend(TValue, TValue), // (src,dst)
-    Return(TValue),
-    Unary(TUnaryOp, TValue, TValue),
-    Binary(TBinaryOp, TValue, TValue, TValue),
-    Copy(TValue, TValue),
-    Jump(Identifier),
-    JumpIfZero(TValue, Identifier),
-    JumpIfNotZero(TValue, Identifier),
-    Label(Identifier),
-    FunCall {
-        name: Identifier,
-        args: Vec<TValue>,
-        dst: TValue,
-    },
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TBinaryOp {
-    Add,
-    Substract,
-    Multiply,
-    Divide,
-    Reminder,
-    IsEqual,
-    IsNotEqual,
-    IsLessThan,
-    IsLessOrEqual,
-    IsGreaterThan,
-    IsGreaterOrEqual,
-    BitwiseAnd,
-    BitwiseOr,
-    BitwiseXor,
-    ShiftLeft,
-    ShiftRight,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TValue {
-    Constant(AstConst),
-    Var(Identifier),
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TUnaryOp {
-    Complement,
-    Negate,
-    LogicalNot,
-}
-
-impl TBinaryOp {
-    pub fn is_shift(self) -> bool {
-        matches!(self, TBinaryOp::ShiftLeft | TBinaryOp::ShiftRight)
-    }
-    pub fn is_divrem(self) -> bool {
-        matches!(self, TBinaryOp::Divide | TBinaryOp::Reminder)
-    }
-
-    pub fn is_rem(self) -> bool {
-        matches!(self, TBinaryOp::Reminder)
-    }
-
-    pub fn is_relational(self) -> bool {
-        matches!(
-            self,
-            Self::IsEqual
-                | Self::IsNotEqual
-                | Self::IsLessThan
-                | Self::IsLessOrEqual
-                | Self::IsGreaterThan
-                | Self::IsGreaterOrEqual
-        )
-    }
-}
 
 static __GLOBAL_COUNTER_NAME: AtomicUsize = AtomicUsize::new(0);
 fn get_uniq_name() -> String {
@@ -123,41 +18,6 @@ static __GLOBAL_COUNTER_LABEL: AtomicUsize = AtomicUsize::new(0);
 fn get_uniq_label() -> String {
     let c = __GLOBAL_COUNTER_LABEL.fetch_add(1, Ordering::AcqRel);
     format!("label_{c}")
-}
-
-impl From<AstUnaryOp> for TUnaryOp {
-    fn from(value: AstUnaryOp) -> Self {
-        match value {
-            AstUnaryOp::Complement => TUnaryOp::Complement,
-            AstUnaryOp::Negate => TUnaryOp::Negate,
-            AstUnaryOp::LogicalNot => TUnaryOp::LogicalNot,
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl From<AstBinaryOp> for TBinaryOp {
-    fn from(value: AstBinaryOp) -> Self {
-        match value {
-            AstBinaryOp::Add => Self::Add,
-            AstBinaryOp::Substract => Self::Substract,
-            AstBinaryOp::Mod => Self::Reminder,
-            AstBinaryOp::Multiply => Self::Multiply,
-            AstBinaryOp::Div => Self::Divide,
-            AstBinaryOp::IsEqual => Self::IsEqual,
-            AstBinaryOp::IsNotEqual => Self::IsNotEqual,
-            AstBinaryOp::LessThan => Self::IsLessThan,
-            AstBinaryOp::LessOrEqual => Self::IsLessOrEqual,
-            AstBinaryOp::GreaterThan => Self::IsGreaterThan,
-            AstBinaryOp::GreaterOrEqual => Self::IsGreaterOrEqual,
-            AstBinaryOp::BitwiseAnd => Self::BitwiseAnd,
-            AstBinaryOp::BitwiseOr => Self::BitwiseOr,
-            AstBinaryOp::BitwiseXor => Self::BitwiseXor,
-            AstBinaryOp::ShiftLeft => Self::ShiftLeft,
-            AstBinaryOp::ShiftRight => Self::ShiftRight,
-            _ => unimplemented!(),
-        }
-    }
 }
 
 fn emit_postfix_incdec(op: AstUnaryOp, exp: Exp, instructions: &mut TInstructions) -> TValue {
