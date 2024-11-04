@@ -1,7 +1,6 @@
+use crate::ast::Identifier;
 use crate::codegen::ASM_SYM_TABLE;
-use crate::codegen::{
-    AsmInstruction, AsmInstructions, AsmType, BinaryOp, Identifier, Operand, Register,
-};
+use crate::codegen::{AsmInstruction, AsmInstructions, AsmType, BinaryOp, Operand, Register};
 use std::collections::HashMap;
 
 pub fn allocate_stack(instructions: &mut AsmInstructions) {
