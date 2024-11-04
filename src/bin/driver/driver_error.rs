@@ -36,16 +36,16 @@ impl std::fmt::Debug for DriverError {
 impl std::error::Error for DriverError {}
 
 macro_rules! from_error {
-    ($e:ty, $variant:ident) => {
+    ($e:ty, $variant:path) => {
         impl From<$e> for DriverError {
             fn from(e: $e) -> Self {
-                Self::$variant(e.to_string())
+                $variant(e.to_string())
             }
         }
     };
 }
 
-from_error!(LexError, LexerError);
-from_error!(ParseError, ParserError);
-from_error!(SemAnalysisError, SemanticError);
-from_error!(std::io::Error, IoError);
+from_error!(LexError, Self::LexerError);
+from_error!(ParseError, Self::ParserError);
+from_error!(SemAnalysisError, Self::SemanticError);
+from_error!(std::io::Error, Self::IoError);
