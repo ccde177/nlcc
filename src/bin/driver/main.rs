@@ -124,7 +124,7 @@ pub fn main() -> Result<()> {
     if !file_exists {
         let filename = args.input.to_string_lossy().to_string();
         let err = DriverError::InputFileDoesNotExist(filename);
-        Err(err)?;
+        return Err(err);
     }
 
     let preprocessed = preprocess(&args)?;
