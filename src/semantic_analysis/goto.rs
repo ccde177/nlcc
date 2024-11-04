@@ -134,9 +134,10 @@ fn validate_fundec(fundec: &mut FunDec) -> Result<()> {
 }
 
 fn validate_toplevel_dec(dec: &mut Declaration) -> Result<()> {
+    use Declaration as D;
     match dec {
-        Declaration::Var(_) => Ok(()),
-        Declaration::Fun(fundec) => validate_fundec(fundec),
+        D::Fun(fundec) => validate_fundec(fundec),
+        D::Var(_) => Ok(()),
     }
 }
 
