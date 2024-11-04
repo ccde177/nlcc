@@ -171,9 +171,10 @@ fn collect_fundec(mut fundec: FunDec) -> Result<FunDec> {
 }
 
 fn collect_toplevel_dec(dec: Declaration) -> Result<Declaration> {
+    use Declaration as D;
     match dec {
-        Declaration::Var(_) => Ok(dec),
-        Declaration::Fun(fundec) => collect_fundec(fundec).map(Declaration::Fun),
+        D::Var(_) => Ok(dec),
+        D::Fun(fundec) => collect_fundec(fundec).map(D::Fun),
     }
 }
 
@@ -182,6 +183,6 @@ pub fn collect_cases(ast: Ast) -> Result<Ast> {
     let declarations = declarations
         .into_iter()
         .map(collect_toplevel_dec)
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<_>>()?;
     Ok(Ast { declarations })
 }
