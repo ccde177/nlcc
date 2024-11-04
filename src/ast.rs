@@ -343,11 +343,19 @@ pub enum AstUnaryOp {
 }
 
 impl AstUnaryOp {
+    #[inline]
     pub fn is_prefix_incdec(&self) -> bool {
         matches!(self, Self::PrefixIncrement | Self::PrefixDecrement)
     }
+
+    #[inline]
     pub fn is_postfix_incdec(&self) -> bool {
         matches!(self, Self::PostfixIncrement | Self::PostfixDecrement)
+    }
+
+    #[inline]
+    pub fn is_incdec(&self) -> bool {
+        self.is_prefix_incdec() || self.is_postfix_incdec()
     }
 }
 

@@ -94,7 +94,7 @@ fn resolve_switch(mut switch: Switch, im: &mut IdentifierMap) -> Result<Statemen
 }
 
 fn resolve_case(mut cased: CasedStatement, im: &mut IdentifierMap) -> Result<Statement> {
-    //Do not resolve exp since it is gonna be checked in another semantical analysis pass
+    //Do not resolve exp since it is gonna be checked in later stages
     cased.body = resolve_statement(*cased.body, im).map(Box::new)?;
     Ok(Statement::Cased(cased))
 }
@@ -171,7 +171,7 @@ fn resolve_statement(st: Statement, im: &mut IdentifierMap) -> Result<Statement>
 fn resolve_exp_call(name: Identifier, args: Vec<Exp>, im: &mut IdentifierMap) -> Result<Exp> {
     let new_name = im
         .get_uniq_name(&name)
-        .ok_or(SemAnalysisError::UndeclaredFunction(name))?;
+        .ok_or_else(|| SemAnalysisError::UndeclaredFunction(name))?;
     let args = args
         .into_iter()
         .map(|arg| resolve_exp(arg, im))
@@ -207,7 +207,7 @@ fn resolve_exp_incdec(op: AstUnaryOp, e: Exp, im: &mut IdentifierMap) -> Result<
 
 fn resolve_exp_var(name: Identifier, im: &mut IdentifierMap) -> Result<Exp> {
     im.get_uniq_name(&name)
-        .ok_or(SemAnalysisError::VariableNotDeclared(name))
+        .ok_or_else(|| SemAnalysisError::VariableNotDeclared(name))
         .map(Exp::var)
 }
 
@@ -223,23 +223,18 @@ fn resolve_exp_binary(op: AstBinaryOp, src: Exp, dst: Exp, im: &mut IdentifierMa
 }
 
 fn resolve_exp(exp: Exp, im: &mut IdentifierMap) -> Result<Exp> {
+    use UntypedExp as UE;
     let ue = exp.into();
     match ue {
-        UntypedExp::Cast(t, e) => resolve_exp(*e, im).map(|e| Exp::cast(t, Box::new(e))),
-        UntypedExp::Unary(
-            op @ (AstUnaryOp::PostfixIncrement
-            | AstUnaryOp::PrefixIncrement
-            | AstUnaryOp::PostfixDecrement
-            | AstUnaryOp::PrefixDecrement),
-            e,
-        ) => resolve_exp_incdec(op, *e, im),
-        UntypedExp::Unary(op, exp) => resolve_exp_unary(op, *exp, im),
-        UntypedExp::Conditional(cond_exp) => resolve_exp_conditional(cond_exp, im),
-        UntypedExp::Assignment(left, right) => resolve_exp_assign(*left, *right, im),
-        UntypedExp::Var(name) => resolve_exp_var(name, im),
-        UntypedExp::Call(name, args) => resolve_exp_call(name, args, im),
-        UntypedExp::Binary(op, src, dst) => resolve_exp_binary(op, *src, *dst, im),
-        UntypedExp::Constant(_) => Ok(ue.into()),
+        UE::Cast(t, e) => resolve_exp(*e, im).map(|e| Exp::cast(t, Box::new(e))),
+        UE::Unary(op, e) if op.is_incdec() => resolve_exp_incdec(op, *e, im),
+        UE::Unary(op, exp) => resolve_exp_unary(op, *exp, im),
+        UE::Conditional(cond_exp) => resolve_exp_conditional(cond_exp, im),
+        UE::Assignment(left, right) => resolve_exp_assign(*left, *right, im),
+        UE::Var(name) => resolve_exp_var(name, im),
+        UE::Call(name, args) => resolve_exp_call(name, args, im),
+        UE::Binary(op, src, dst) => resolve_exp_binary(op, *src, *dst, im),
+        UE::Constant(_) => Ok(ue.into()),
     }
 }
 
@@ -327,49 +322,42 @@ fn resolve_vardec(dec: VarDec, im: &mut IdentifierMap) -> Result<VarDec> {
     })
 }
 
-fn resolve_local_declaration(dec: Declaration, im: &mut IdentifierMap) -> Result<Declaration> {
+fn resolve_local_dec(dec: Declaration, im: &mut IdentifierMap) -> Result<Declaration> {
+    use Declaration as D;
     match dec {
-        Declaration::Var(vardec) => {
-            let resolved = resolve_vardec(vardec, im)?;
-            Ok(Declaration::Var(resolved))
-        }
-        Declaration::Fun(fundec) => {
+        D::Var(vardec) => resolve_vardec(vardec, im).map(D::Var),
+        D::Fun(fundec) => {
             if fundec.body.is_some() || fundec.storage_class.is_static() {
                 return Err(SemAnalysisError::LocalFunDefinition(fundec.name));
             }
-            let resolved = resolve_fundec(fundec, im)?;
-            Ok(Declaration::Fun(resolved))
+            resolve_fundec(fundec, im).map(D::Fun)
         }
     }
 }
 
 fn resolve_block_item(item: AstBlockItem, im: &mut IdentifierMap) -> Result<AstBlockItem> {
+    use AstBlockItem as BItem;
     match item {
-        AstBlockItem::S(statement) => {
-            let statement = resolve_statement(statement, im)?;
-            Ok(AstBlockItem::S(statement))
-        }
-        AstBlockItem::D(declaration) => {
-            let declaration = resolve_local_declaration(declaration, im)?;
-            Ok(AstBlockItem::D(declaration))
-        }
+        BItem::S(statement) => resolve_statement(statement, im).map(BItem::S),
+        BItem::D(declaration) => resolve_local_dec(declaration, im).map(BItem::D),
     }
 }
 
 fn resolve_block(block: AstBlock, im: &mut IdentifierMap) -> Result<AstBlock> {
-    let mut result = AstBlockItems::new();
-    for item in block.items {
-        let resolved_item = resolve_block_item(item, im)?;
-        result.push(resolved_item);
-    }
+    let items = block
+        .items
+        .into_iter()
+        .map(|item| resolve_block_item(item, im))
+        .collect::<Result<_>>()?;
 
-    Ok(AstBlock { items: result })
+    Ok(AstBlock { items })
 }
 
-fn resolve_global_declaration(dec: Declaration, im: &mut IdentifierMap) -> Result<Declaration> {
+fn resolve_global_dec(dec: Declaration, im: &mut IdentifierMap) -> Result<Declaration> {
+    use Declaration as D;
     match dec {
-        Declaration::Fun(fundec) => resolve_fundec(fundec, im).map(Declaration::Fun),
-        Declaration::Var(vardec) => resolve_toplevel_vardec(vardec, im).map(Declaration::Var),
+        D::Fun(fundec) => resolve_fundec(fundec, im).map(D::Fun),
+        D::Var(vardec) => resolve_toplevel_vardec(vardec, im).map(D::Var),
     }
 }
 
@@ -386,12 +374,12 @@ fn resolve_toplevel_vardec(vardec: VarDec, im: &mut IdentifierMap) -> Result<Var
 
 pub fn name_resolution(ast: Ast) -> Result<Ast> {
     let Ast { declarations } = ast;
-    let mut resolved_decs = Vec::new();
     let mut im = IdentifierMap::new();
-    for dec in declarations {
-        let resolved = resolve_global_declaration(dec, &mut im)?;
-        resolved_decs.push(resolved);
-    }
+
+    let resolved_decs = declarations
+        .into_iter()
+        .map(|dec| resolve_global_dec(dec, &mut im))
+        .collect::<Result<_>>()?;
 
     Ok(Ast {
         declarations: resolved_decs,
