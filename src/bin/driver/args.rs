@@ -64,7 +64,6 @@ impl Args {
         args
     }
 
-    #[allow(clippy::items_after_statements)]
     fn usage() -> ! {
         let cmd0 = std::env::args().next().unwrap_or("drirver".to_owned());
         let usage_msg = format!("Usage: {cmd0} [OPTIONS] FILE\n");
