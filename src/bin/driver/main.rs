@@ -10,9 +10,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::process::Command;
 
-type BoxedError = Box<dyn std::error::Error>;
-
-fn preprocess(args: &Args) -> Result<PathBuf, BoxedError> {
+fn preprocess(args: &Args) -> Result<PathBuf, DriverError> {
     let mut preprocessed = args.input.clone();
     preprocessed.set_extension("i");
 
@@ -22,7 +20,8 @@ fn preprocess(args: &Args) -> Result<PathBuf, BoxedError> {
         .arg(&args.input)
         .arg("-o")
         .arg(&preprocessed)
-        .status()?;
+        .status()
+        .map_err(DriverError::from)?;
     if !status.success() {
         let err = DriverError::PreprocessorFailed;
         Err(err)?;
@@ -31,12 +30,12 @@ fn preprocess(args: &Args) -> Result<PathBuf, BoxedError> {
 }
 
 #[cfg(feature = "lexer")]
-fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>, BoxedError> {
+fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>, DriverError> {
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
 
     let tokens = lexer::lex(&source)?;
 
-    fs::remove_file(&preprocessed)?;
+    fs::remove_file(&preprocessed).map_err(DriverError::from)?;
 
     if args.lex {
         dbg!(&tokens);
@@ -46,7 +45,7 @@ fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>, Box
 }
 
 #[cfg(feature = "parser")]
-fn parse(tokens: &[lexer::Token], args: &Args) -> Result<ast::Ast, BoxedError> {
+fn parse(tokens: &[lexer::Token], args: &Args) -> Result<ast::Ast, DriverError> {
     let ast = parser::parse(tokens)?;
     if args.parse {
         dbg!(&ast);
@@ -56,7 +55,7 @@ fn parse(tokens: &[lexer::Token], args: &Args) -> Result<ast::Ast, BoxedError> {
 }
 
 #[cfg(feature = "semantic_analysis")]
-fn validate(ast: ast::Ast, args: &Args) -> Result<Ast, BoxedError> {
+fn validate(ast: ast::Ast, args: &Args) -> Result<Ast, DriverError> {
     let validated_ast = semantic_analysis::validate(ast)?;
     if args.validate {
         dbg!(&validated_ast);
@@ -66,13 +65,13 @@ fn validate(ast: ast::Ast, args: &Args) -> Result<Ast, BoxedError> {
 }
 
 #[cfg(feature = "tacky")]
-fn gen_tacky(ast: ast::Ast, args: &Args) -> Result<tacky::TAst, BoxedError> {
+fn gen_tacky(ast: ast::Ast, args: &Args) -> tacky::TAst {
     let tacky = tacky::emit_tacky(ast);
     if args.tacky {
         dbg!(&tacky);
         exit(0);
     }
-    Ok(tacky)
+    tacky
 }
 
 #[cfg(feature = "codegen")]
@@ -86,7 +85,7 @@ fn gen_asm(tacky: tacky::TAst, args: &Args) -> codegen::AsmAst {
 }
 
 #[cfg(feature = "emission")]
-fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), BoxedError> {
+fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), DriverError> {
     let mut asm_file = args.input.clone();
     asm_file.set_extension("s");
     fs::write(&asm_file, asm_ast.to_string())?;
@@ -118,7 +117,7 @@ fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<(), BoxedError> {
 }
 
 #[allow(unused_variables)]
-pub fn main() -> Result<(), BoxedError> {
+pub fn main() -> Result<(), DriverError> {
     let args = Args::parse();
 
     let file_exists = fs::exists(&args.input)?;
@@ -140,7 +139,7 @@ pub fn main() -> Result<(), BoxedError> {
     let validated_ast = validate(ast, &args)?;
 
     #[cfg(feature = "tacky")]
-    let tacky = gen_tacky(validated_ast, &args)?;
+    let tacky = gen_tacky(validated_ast, &args);
 
     #[cfg(feature = "codegen")]
     let asm_ast = gen_asm(tacky, &args);
