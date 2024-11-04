@@ -93,7 +93,7 @@ impl NameGenerator {
 fn label_dcased(mut dcased: DCasedStatement, ng: &mut NameGenerator) -> Result<Statement> {
     dcased.label = ng
         .label_default_case()
-        .ok_or(SemAnalysisError::DefaultNotInSwitch)?;
+        .ok_or_else(|| SemAnalysisError::DefaultNotInSwitch)?;
     dcased.body = label_statement(*dcased.body, ng).map(Box::new)?;
     Ok(Statement::DCased(dcased))
 }
@@ -110,7 +110,7 @@ fn label_cased(mut cased: CasedStatement, ng: &mut NameGenerator) -> Result<Stat
 
     cased.label = ng
         .label_case(const_exp)
-        .ok_or(SemAnalysisError::CaseNotInSwitch)?;
+        .ok_or_else(|| SemAnalysisError::CaseNotInSwitch)?;
     cased.body = label_statement(*cased.body, ng).map(Box::new)?;
     Ok(Statement::Cased(cased))
 }
@@ -153,26 +153,18 @@ fn label_while(mut while_st: While, ng: &mut NameGenerator) -> Result<Statement>
 fn label_statement(statement: Statement, ng: &mut NameGenerator) -> Result<Statement> {
     use Statement as S;
     match statement {
-        S::Labeled(label, st) => {
-            let st = label_statement(*st, ng).map(Box::new)?;
-            Ok(Statement::Labeled(label, st))
-        }
-        S::Compound(block) => {
-            let block = label_block(block, ng)?;
-            Ok(Statement::Compound(block))
-        }
-        S::Break(_) => {
-            let label = ng
-                .label_break()
-                .ok_or(SemAnalysisError::BreakOutsideOfLoop)?;
-            Ok(Statement::Break(label))
-        }
-        S::Continue(_) => {
-            let label = ng
-                .label_continue()
-                .ok_or(SemAnalysisError::ContinueOutsideOfLoop)?;
-            Ok(S::Continue(label))
-        }
+        S::Labeled(label, st) => label_statement(*st, ng)
+            .map(Box::new)
+            .map(|st| S::Labeled(label, st)),
+        S::Break(_) => ng
+            .label_break()
+            .ok_or_else(|| SemAnalysisError::BreakOutsideOfLoop)
+            .map(S::Break),
+        S::Continue(_) => ng
+            .label_continue()
+            .ok_or_else(|| SemAnalysisError::ContinueOutsideOfLoop)
+            .map(S::Continue),
+        S::Compound(block) => label_block(block, ng).map(S::Compound),
         S::DCased(dcased) => label_dcased(dcased, ng),
         S::Cased(cased) => label_cased(cased, ng),
         S::Switch(switch) => label_switch(switch, ng),
@@ -213,9 +205,10 @@ fn label_fundec(mut fundec: FunDec, ng: &mut NameGenerator) -> Result<FunDec> {
 }
 
 fn label_toplevel_dec(dec: Declaration, ng: &mut NameGenerator) -> Result<Declaration> {
+    use Declaration as D;
     match dec {
-        Declaration::Var(_) => Ok(dec),
-        Declaration::Fun(fundec) => label_fundec(fundec, ng).map(Declaration::Fun),
+        D::Fun(fundec) => label_fundec(fundec, ng).map(D::Fun),
+        D::Var(_) => Ok(dec),
     }
 }
 
