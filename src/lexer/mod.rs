@@ -5,22 +5,22 @@ mod lexer_tests;
 mod token;
 
 use cursor::Cursor;
-pub use lexer_error::{LexError, Result};
-pub use token::Token;
+pub use lexer_error::{InnerLexError, LexError};
+pub use token::{LinedToken, Token};
 
-pub type Tokens = Vec<Token>;
+pub type Tokens = Vec<LinedToken>;
 
-fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token> {
+fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token, InnerLexError> {
     match (first, second, third) {
         ('>', '>', '=') => Ok(Token::AssignShr),
         ('<', '<', '=') => Ok(Token::AssignShl),
-        _ => Err(LexError::BadMcharOperator(format!(
+        _ => Err(InnerLexError::BadMcharOperator(format!(
             "{first}{second}{third}"
         ))),
     }
 }
 
-fn lex_mcharop2(first: char, second: char) -> Result<Token> {
+fn lex_mcharop2(first: char, second: char) -> Result<Token, InnerLexError> {
     match (first, second) {
         ('-', '-') => Ok(Token::Decrement),
         ('+', '+') => Ok(Token::Increment),
@@ -40,11 +40,11 @@ fn lex_mcharop2(first: char, second: char) -> Result<Token> {
         ('&', '=') => Ok(Token::AssignAnd),
         ('|', '=') => Ok(Token::AssignOr),
         ('^', '=') => Ok(Token::AssignXor),
-        _ => Err(LexError::BadMcharOperator(format!("{first}{second}"))),
+        _ => Err(InnerLexError::BadMcharOperator(format!("{first}{second}"))),
     }
 }
 
-fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
+fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     let first = cursor.take().expect("Is always Some");
     let second = cursor.peek();
     let eq = cursor.peek_2nd().filter(|c| *c == '=');
@@ -70,7 +70,7 @@ fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
     Token::try_from(first)
 }
 
-fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
+fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     let start = cursor.as_str();
     let mut count = 0;
 
@@ -88,7 +88,7 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
 
     if let Some(next) = cursor.peek() {
         if next.is_alphabetic() || next == '_' {
-            return Err(LexError::BadConstantSuffix(next));
+            return Err(InnerLexError::BadConstantSuffix(next));
         }
     }
 
@@ -125,31 +125,40 @@ fn lex_identifier(cursor: &mut Cursor) -> Token {
     Token::from(&start[..len])
 }
 
-pub fn lex(input: &str) -> Result<Tokens> {
+pub fn lex(input: &str) -> Result<Tokens, LexError> {
     let mut tokens = Tokens::with_capacity(input.len());
     let mut cursor = Cursor::new(input);
     cursor.skip_whitespaces();
 
     while let Some(next) = cursor.peek() {
+        let ln = cursor.get_ln();
+        let set_line = |t: Token| LinedToken::new(t, ln);
+        let set_err_line = |err: InnerLexError| err.set_line(ln);
         match next {
             ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' | ',' => {
-                let token = Token::try_from(next).expect("Should never fail");
+                let token = Token::try_from(next)
+                    .map(set_line)
+                    .expect("Should never fail");
                 tokens.push(token);
                 cursor.take();
             }
             '%' | '^' | '/' | '*' | '-' | '+' | '=' | '!' | '>' | '<' | '|' | '&' => {
-                let token = lex_mcharoperator(&mut cursor)?;
+                let token = lex_mcharoperator(&mut cursor)
+                    .map(set_line)
+                    .map_err(set_err_line)?;
                 tokens.push(token);
             }
             '_' | 'a'..='z' | 'A'..='Z' => {
                 let token = lex_identifier(&mut cursor);
-                tokens.push(token);
+                tokens.push(set_line(token));
             }
             '0'..='9' => {
-                let token = lex_constant(&mut cursor)?;
+                let token = lex_constant(&mut cursor)
+                    .map(set_line)
+                    .map_err(set_err_line)?;
                 tokens.push(token);
             }
-            _ => return Err(LexError::UnexpectedChar(next)),
+            _ => return Err(InnerLexError::UnexpectedChar(next).set_line(ln)),
         }
         cursor.skip_whitespaces();
     }

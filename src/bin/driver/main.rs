@@ -31,7 +31,7 @@ fn preprocess(args: &Args) -> Result<PathBuf> {
 }
 
 #[cfg(feature = "lexer")]
-fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>> {
+fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<lexer::Tokens> {
     let source = std::fs::read_to_string(&preprocessed).expect("Can't open preprocessed file");
 
     let tokens = lexer::lex(&source)?;
@@ -46,7 +46,7 @@ fn tokenize(preprocessed: PathBuf, args: &Args) -> Result<Vec<lexer::Token>> {
 }
 
 #[cfg(feature = "parser")]
-fn parse(tokens: &[lexer::Token], args: &Args) -> Result<Ast> {
+fn parse(tokens: &[lexer::LinedToken], args: &Args) -> Result<Ast> {
     let ast = parser::parse(tokens)?;
     if args.parse {
         dbg!(&ast);

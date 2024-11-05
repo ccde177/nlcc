@@ -19,6 +19,8 @@ pub enum Type {
     #[default]
     Int,
     Long,
+    UInt,
+    ULong,
     Fun {
         ptypes: Vec<Type>,
         return_type: Box<Type>,
@@ -220,7 +222,17 @@ impl Exp {
         Self::Untyped(UntypedExp::Constant(cs))
     }
 
-    pub fn constant_from(i: i64) -> Self {
+    pub fn constant_from_unsigned(u: u64) -> Self {
+        let cs = if u < u64::from(u32::MAX) {
+            AstConst::UInt(u as u32)
+        } else {
+            AstConst::ULong(u)
+        };
+
+        Self::Untyped(UntypedExp::Constant(cs))
+    }
+
+    pub fn constant_from_signed(i: i64) -> Self {
         let cs = if i < i64::from(i32::MAX) {
             AstConst::Int(i as i32)
         } else {
@@ -247,6 +259,8 @@ pub enum UntypedExp {
 pub enum AstConst {
     Int(i32),
     Long(i64),
+    UInt(u32),
+    ULong(u64),
 }
 
 impl AstConst {
@@ -254,6 +268,7 @@ impl AstConst {
         match self {
             Self::Int(i) => *i < 0,
             Self::Long(l) => *l < 0,
+            Self::UInt(_) | Self::ULong(_) => false,
         }
     }
 
@@ -261,15 +276,24 @@ impl AstConst {
         match self {
             Self::Int(i) => Self::Int(i32::abs(*i)),
             Self::Long(l) => Self::Long(i64::abs(*l)),
+            Self::UInt(_) | Self::ULong(_) => *self,
         }
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    pub fn new(t: &Type, v: i64) -> Option<Self> {
+    pub fn new_signed(t: &Type, v: i64) -> Option<Self> {
         match t {
             Type::Int => Some(AstConst::Int(v as i32)),
             Type::Long => Some(AstConst::Long(v)),
-            Type::Fun { .. } => None,
+            Type::Fun { .. } | Type::ULong | Type::UInt => None,
+        }
+    }
+
+    pub fn new_unsigned(t: &Type, v: u64) -> Option<Self> {
+        match t {
+            Type::UInt => Some(AstConst::UInt(v as u32)),
+            Type::ULong => Some(AstConst::ULong(v)),
+            Type::Fun { .. } | Type::Long | Type::Int => None,
         }
     }
 
@@ -277,25 +301,51 @@ impl AstConst {
         match self {
             Self::Int(_) => Type::Int,
             Self::Long(_) => Type::Long,
+            Self::ULong(_) => Type::ULong,
+            Self::UInt(_) => Type::UInt,
         }
     }
 
-    fn get_value_i64(&self) -> i64 {
+    fn get_value_i64(&self) -> Option<i64> {
         match self {
-            Self::Int(i) => i64::from(*i),
-            Self::Long(i) => *i,
+            Self::Int(i) => Some(i64::from(*i)),
+            Self::Long(i) => Some(*i),
+            Self::UInt(_) | Self::ULong(_) => None,
+        }
+    }
+
+    fn get_value_u64(&self) -> Option<u64> {
+        match self {
+            Self::UInt(u) => Some(u64::from(*u)),
+            Self::ULong(u) => Some(*u),
+            Self::Int(_) | Self::Long(_) => None,
         }
     }
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn convert_to(&self, t: &Type) -> Self {
         let self_type = self.get_type();
-        let value = self.get_value_i64();
-        match t {
-            t if t == &self_type => *self,
-            Type::Int => AstConst::Int(value as i32),
-            Type::Long => AstConst::Long(value),
-            Type::Fun { .. } => *self,
+        if t == &self_type {
+            return *self;
+        }
+        if self_type.is_signed() {
+            let value = self.get_value_i64().unwrap();
+            match t {
+                Type::Int => AstConst::Int(value as i32),
+                Type::UInt => AstConst::UInt(value as u32),
+                Type::ULong => AstConst::ULong(value as u64),
+                Type::Long => AstConst::Long(value),
+                Type::Fun { .. } => *self,
+            }
+        } else {
+            let value = self.get_value_u64().unwrap();
+            match t {
+                Type::Int => AstConst::Int(value as i32),
+                Type::UInt => AstConst::UInt(value as u32),
+                Type::Long => AstConst::Long(value as i64),
+                Type::ULong => AstConst::ULong(value as u64),
+                Type::Fun { .. } => *self,
+            }
         }
     }
 }
@@ -305,6 +355,8 @@ impl std::fmt::Display for AstConst {
         match self {
             AstConst::Int(i) => write!(f, "{i}"),
             AstConst::Long(i) => write!(f, "{i}"),
+            AstConst::ULong(u) => write!(f, "{u}"),
+            AstConst::UInt(u) => write!(f, "{u}"),
         }
     }
 }
@@ -402,6 +454,16 @@ impl Type {
         } else {
             Self::Long
         }
+    }
+
+    #[inline]
+    pub fn is_signed(&self) -> bool {
+        matches!(self, Self::Int | Self::Long)
+    }
+
+    #[inline]
+    pub fn is_unsigned(&self) -> bool {
+        matches!(self, Self::UInt | Self::ULong)
     }
 }
 

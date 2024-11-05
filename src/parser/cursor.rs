@@ -1,40 +1,49 @@
-use crate::lexer::Token;
-use crate::parser::{ParseError, Result};
+use crate::lexer::{LinedToken, Token};
+use crate::parser::{InnerParseError, ParseError};
 
 #[derive(Debug)]
 pub struct Cursor<'a> {
-    tokens: &'a [Token],
+    tokens: &'a [LinedToken],
     position: usize,
+    line: u64,
 }
 
 #[allow(dead_code)]
 impl<'a> Cursor<'a> {
-    pub fn new(tokens: &'a [Token]) -> Self {
+    pub fn new(tokens: &'a [LinedToken]) -> Self {
         Self {
             tokens,
             position: 0,
+            line: 0,
         }
     }
 
     pub fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.position)
+        self.tokens.get(self.position).map(|lined| &lined.inner)
     }
 
     pub fn bump(&mut self) {
         self.position += 1;
+        if let Some(next) = self.tokens.get(self.position) {
+            self.line = next.get_line()
+        }
     }
 
-    #[inline]
     pub fn skip_if(&mut self, p: impl FnOnce(&Token) -> bool) -> bool {
-        let condition = self.peek().filter(|&t| p(t)).is_some();
+        let condition = self.tokens.get(self.position).filter(|&t| p(t)).is_some();
         if condition {
-            self.bump();
+            self.bump()
         }
         condition
     }
 
     pub fn bump_if(&mut self, t: &Token) -> bool {
-        let condition = self.peek() == Some(t);
+        let predicate = |token: &Token| token == t;
+        let condition = self
+            .tokens
+            .get(self.position)
+            .filter(|&x| predicate(x))
+            .is_some();
         if condition {
             self.bump();
         }
@@ -45,45 +54,52 @@ impl<'a> Cursor<'a> {
         self.position >= self.tokens.len()
     }
 
+    pub fn get_line(&self) -> u64 {
+        self.line
+    }
+
     pub fn peek_nth(&self, n: usize) -> Option<&Token> {
-        self.tokens.get(self.position + n)
+        self.tokens.get(self.position + n).map(|t| &t.inner)
     }
 
     pub fn next_if(&mut self, p: impl FnOnce(&Token) -> bool) -> Option<&Token> {
-        let current = self.tokens.get(self.position).filter(|&x| p(x));
-        if current.is_some() {
-            self.position += 1;
+        let next = self.tokens.get(self.position).filter(|&x| p(x));
+        if next.is_some() {
+            self.bump();
         }
-        current
+        next.map(|v| &**v)
     }
 
-    pub fn expect(&mut self, t: &Token) -> Result<()> {
+    pub fn expect(&mut self, t: &Token) -> Result<(), ParseError> {
         let next = self.next_or_error()?;
         if next == t {
             Ok(())
         } else {
-            Err(ParseError::ExpectedButGot(t.clone(), next.clone()))
+            Err(InnerParseError::ExpectedButGot(t.clone(), next.clone()).set_line(self.line))
         }
     }
 
-    pub fn peek_nth_or_error(&self, n: usize) -> Result<&Token> {
-        self.peek_nth(n).ok_or(ParseError::UnexpectedEof)
+    pub fn peek_nth_or_error(&self, n: usize) -> Result<&Token, ParseError> {
+        self.peek_nth(n)
+            .ok_or(InnerParseError::UnexpectedEof.set_line(self.line))
     }
 
-    pub fn peek_or_error(&mut self) -> Result<&Token> {
-        self.peek().ok_or(ParseError::UnexpectedEof)
+    pub fn peek_or_error(&mut self) -> Result<&Token, ParseError> {
+        self.peek()
+            .ok_or(InnerParseError::UnexpectedEof.set_line(self.line))
     }
 
     pub fn peek_is(&self, t: &Token) -> bool {
         self.peek() == Some(t)
     }
 
-    pub fn next_or_error(&mut self) -> Result<&Token> {
+    pub fn next_or_error(&mut self) -> Result<&Token, ParseError> {
         let next = self
             .tokens
             .get(self.position)
-            .ok_or(ParseError::UnexpectedEof)?;
+            .ok_or(InnerParseError::UnexpectedEof.set_line(self.line))?;
+        self.line = next.get_line();
         self.position += 1;
-        Ok(next)
+        Ok(&next.inner)
     }
 }

@@ -1,4 +1,17 @@
-use super::{LexError, Result};
+use super::lexer_error::InnerLexError;
+use std::ops::Deref;
+
+#[derive(Debug, Clone)]
+pub struct LinedToken {
+    pub(crate) inner: Token,
+    ln: u64,
+}
+
+impl From<LinedToken> for Token {
+    fn from(value: LinedToken) -> Self {
+        value.inner
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token {
@@ -69,12 +82,37 @@ pub enum Token {
     Long,
 }
 
+impl LinedToken {
+    pub fn new(t: Token, ln: u64) -> Self {
+        Self { inner: t, ln }
+    }
+    pub fn get_line(&self) -> u64 {
+        self.ln
+    }
+}
+
+impl Deref for LinedToken {
+    type Target = Token;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 impl Token {
     #[inline]
-    pub fn is_type(&self) -> bool {
+    pub fn is_sign_specifier(&self) -> bool {
+        matches!(self, Self::Unsigned | Self::Signed)
+    }
+
+    #[inline]
+    pub fn is_type_specifier(&self) -> bool {
         matches!(self, Self::Int | Self::Long)
     }
 
+    #[inline]
+    pub fn is_type(&self) -> bool {
+        self.is_type_specifier() || self.is_sign_specifier()
+    }
     #[inline]
     pub fn is_compound_assign(&self) -> bool {
         matches!(
@@ -93,8 +131,13 @@ impl Token {
     }
 
     #[inline]
+    pub fn is_storage_specifier(&self) -> bool {
+        matches!(self, Token::Extern | Token::Static)
+    }
+
+    #[inline]
     pub fn is_specifier(&self) -> bool {
-        self.is_type() || matches!(self, Token::Extern | Token::Static)
+        self.is_sign_specifier() || self.is_type_specifier() || self.is_storage_specifier()
     }
 
     #[inline]
@@ -163,8 +206,8 @@ impl Token {
 }
 
 impl TryFrom<char> for Token {
-    type Error = LexError;
-    fn try_from(c: char) -> Result<Self> {
+    type Error = InnerLexError;
+    fn try_from(c: char) -> std::result::Result<Self, InnerLexError> {
         match c {
             ';' => Ok(Self::Semicolon),
             '(' => Ok(Self::OpenParanth),
@@ -187,7 +230,7 @@ impl TryFrom<char> for Token {
             ':' => Ok(Self::Colon),
             '?' => Ok(Self::QuestionMark),
             ',' => Ok(Self::Comma),
-            _ => Err(LexError::ExpectedOperatorOrSeparator(c)),
+            _ => Err(InnerLexError::ExpectedOperatorOrSeparator(c)),
         }
     }
 }

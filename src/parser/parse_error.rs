@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 
 pub type Result<T> = std::result::Result<T, ParseError>;
 #[derive(Debug, Eq, PartialEq)]
-pub enum ParseError {
+pub enum InnerParseError {
     ExpectedButGot(Token, Token),
     ExpectedIdentifierButGot(Token),
     UnexpectedToken(Token),
@@ -12,37 +12,65 @@ pub enum ParseError {
     TrailingComma,
     UnexpectedEof,
     InvalidTypeSpecifiers(Vec<Token>),
+    DuplicateSignSpecifiers(Token, Token),
     InvalidStorageClass(Vec<Token>),
     BadForInit,
 }
 
+#[derive(Debug)]
+pub struct ParseError {
+    pub inner: InnerParseError,
+    pub ln: u64,
+}
+
+impl ParseError {
+    pub fn get_ln(&self) -> u64 {
+        self.ln
+    }
+}
+
+impl InnerParseError {
+    pub fn set_line(self, ln: u64) -> ParseError {
+        ParseError { inner: self, ln }
+    }
+}
+
 impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
+impl Display for InnerParseError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        use ParseError as PE;
+        use InnerParseError as PE;
         match self {
+            PE::DuplicateSignSpecifiers(t1, t2) => {
+                write!(f, "duplicate sign specifier {t1:?} and {t2:?}")
+            }
             PE::ExpectedButGot(expected, got) => {
-                write!(f, "Expected token {expected:?}, but got {got:?}")
+                write!(f, "expected token {expected:?}, but got {got:?}")
             }
             PE::ExpectedIdentifierButGot(token) => {
-                write!(f, "Expected identifier, but got {token:?}")
+                write!(f, "expected identifier, but got {token:?}")
             }
-            PE::UnexpectedToken(t) => write!(f, "Unexpected token {t:?}"),
-            PE::BadFactor(t) => write!(f, "Bad factor {t:?}"),
-            PE::BadUnaryOp(t) => write!(f, "Bad unary operator {t:?}"),
-            PE::UnexpectedEof => write!(f, "Reached unexpected EOF"),
-            PE::TrailingComma => write!(f, "Trailing comman in parameter list"),
+            PE::UnexpectedToken(t) => write!(f, "unexpected token {t:?}"),
+            PE::BadFactor(t) => write!(f, "bad factor {t:?}"),
+            PE::BadUnaryOp(t) => write!(f, "bad unary operator {t:?}"),
+            PE::UnexpectedEof => write!(f, "reached unexpected EOF"),
+            PE::TrailingComma => write!(f, "trailing comman in parameter list"),
             PE::InvalidTypeSpecifiers(ss) => {
-                write!(f, "Invalid combination of type specifiers: {ss:?}")
+                write!(f, "invalid combination of type specifiers: {ss:?}")
             }
             PE::InvalidStorageClass(ss) => {
-                write!(f, "Invalid combination of storage class specifiers: {ss:?}")
+                write!(f, "invalid combination of storage class specifiers: {ss:?}")
             }
             PE::BadForInit => write!(
                 f,
-                "Function declarations are not allowed inside for loop initialization"
+                "function declarations are not allowed inside for loop initialization"
             ),
         }
     }
 }
 
-impl std::error::Error for ParseError {}
+impl std::error::Error for InnerParseError {}

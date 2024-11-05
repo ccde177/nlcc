@@ -3,12 +3,14 @@ use std::str::Chars;
 #[derive(Clone)]
 pub struct Cursor<'a> {
     chars: Chars<'a>,
+    ln: u64,
 }
 
 impl<'a> Cursor<'a> {
     pub fn new(s: &'a str) -> Self {
         let chars = s.chars();
-        Self { chars }
+        let ln = 0;
+        Self { chars, ln }
     }
 
     pub fn peek(&self) -> Option<char> {
@@ -40,11 +42,18 @@ impl<'a> Cursor<'a> {
         skipped
     }
 
+    pub fn get_ln(&self) -> u64 {
+        self.ln
+    }
+
     pub fn skip_whitespaces(&mut self) {
         while self.skip_if(char::is_whitespace) {}
     }
 
     pub fn take(&mut self) -> Option<char> {
+        if self.chars.clone().next() == Some('\n') {
+            self.ln += 1;
+        }
         self.chars.next()
     }
 

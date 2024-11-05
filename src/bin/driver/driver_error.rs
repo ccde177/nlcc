@@ -14,9 +14,9 @@ pub enum DriverError {
     #[cfg(feature = "emission")]
     AssemblerFailed,
     #[cfg(feature = "lexer")]
-    LexerError(String),
+    LexerError(String, u64),
     #[cfg(feature = "parser")]
-    ParserError(String),
+    ParserError(String, u64),
     #[cfg(feature = "semantic_analysis")]
     SemanticError(String),
     IoError(String),
@@ -27,9 +27,9 @@ impl std::fmt::Display for DriverError {
         match self {
             Self::IoError(e) => write!(f, "io error: {e}"),
             #[cfg(feature = "lexer")]
-            Self::LexerError(e) => write!(f, "lex error: {e}"),
+            Self::LexerError(e, ln) => write!(f, "lex error on line {ln}: {e}"),
             #[cfg(feature = "parser")]
-            Self::ParserError(e) => write!(f, "parse error: {e}"),
+            Self::ParserError(e, ln) => write!(f, "parse error on line {ln}: {e}"),
             #[cfg(feature = "semantic_analysis")]
             Self::SemanticError(e) => write!(f, "semantic error: {e}"),
             Self::InputFileDoesNotExist(name) => write!(f, "File {name} does not exist"),
@@ -48,6 +48,18 @@ impl std::fmt::Debug for DriverError {
 
 impl std::error::Error for DriverError {}
 
+macro_rules! from_lined_error {
+    ($e:ty, $variant:path) => {
+        impl From<$e> for DriverError {
+            fn from(e: $e) -> Self {
+                let msg = e.to_string();
+                let ln = e.get_ln();
+                $variant(msg, ln)
+            }
+        }
+    };
+}
+
 macro_rules! from_error {
     ($e:ty, $variant:path) => {
         impl From<$e> for DriverError {
@@ -60,8 +72,8 @@ macro_rules! from_error {
 
 from_error!(std::io::Error, Self::IoError);
 #[cfg(feature = "lexer")]
-from_error!(LexError, Self::LexerError);
+from_lined_error!(LexError, Self::LexerError);
 #[cfg(feature = "parser")]
-from_error!(ParseError, Self::ParserError);
+from_lined_error!(ParseError, Self::ParserError);
 #[cfg(feature = "semantic_analysis")]
 from_error!(SemAnalysisError, Self::SemanticError);

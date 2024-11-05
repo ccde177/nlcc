@@ -4,9 +4,9 @@ mod parse_error;
 mod parser_tests;
 
 use crate::ast::*;
-use crate::lexer::Token;
+use crate::lexer::{LinedToken, Token};
 use cursor::Cursor;
-pub use parse_error::{ParseError, Result};
+pub use parse_error::{InnerParseError, ParseError, Result};
 
 #[allow(clippy::match_same_arms)]
 fn get_prec(token: &Token) -> u64 {
@@ -47,26 +47,36 @@ fn get_prec(token: &Token) -> u64 {
 }
 
 fn parse_identifier(cursor: &mut Cursor) -> Result<Identifier> {
+    let line = cursor.get_line();
     let next = cursor.next_or_error()?;
     if let Token::Identifier(name) = next {
         Ok(name.to_owned())
     } else {
-        Err(ParseError::ExpectedIdentifierButGot(next.clone()))
+        Err(InnerParseError::ExpectedIdentifierButGot(next.clone()).set_line(line))
     }
 }
 
 fn parse_type_specifiers(cursor: &mut Cursor) -> Result<Type> {
     let mut types = Vec::new();
-    while let Some(next) = cursor.next_if(Token::is_type).cloned() {
-        types.push(next);
+    let mut sign = None;
+    let predicate = |t: &Token| t.is_type_specifier() || t.is_sign_specifier();
+    let line = cursor.get_line();
+    while let Some(next) = cursor.next_if(predicate).cloned() {
+        if next.is_sign_specifier() {
+            let line = cursor.get_line();
+            set_sign_specifier(&mut sign, next).map_err(|err| err.set_line(line))?;
+        } else {
+            types.push(next);
+        }
     }
-    parse_type(&types)
+    parse_type(&types, sign).map_err(|err| err.set_line(line))
 }
 
 fn parse_params(cursor: &mut Cursor) -> Result<(Vec<Type>, Vec<Identifier>)> {
     let mut params = Vec::new();
     let mut ptypes = Vec::new();
 
+    //TODO: Maybe add || cursor.bump_if(&Token::CloseParanth)
     let void = cursor.bump_if(&Token::Void);
 
     if void {
@@ -83,7 +93,8 @@ fn parse_params(cursor: &mut Cursor) -> Result<(Vec<Type>, Vec<Identifier>)> {
     }
 
     if expect_more {
-        return Err(ParseError::TrailingComma);
+        let line = cursor.get_line();
+        return Err(InnerParseError::TrailingComma.set_line(line));
     }
 
     Ok((ptypes, params))
@@ -97,8 +108,8 @@ fn parse_conditional_middle(cursor: &mut Cursor) -> Result<Exp> {
 }
 
 impl TryFrom<&Token> for AstBinaryOp {
-    type Error = ParseError;
-    fn try_from(value: &Token) -> Result<Self> {
+    type Error = InnerParseError;
+    fn try_from(value: &Token) -> std::result::Result<Self, InnerParseError> {
         match value {
             Token::Plus => Ok(AstBinaryOp::Add),
             Token::Hyphen => Ok(AstBinaryOp::Substract),
@@ -118,7 +129,7 @@ impl TryFrom<&Token> for AstBinaryOp {
             Token::BitwiseXor => Ok(AstBinaryOp::BitwiseXor),
             Token::ShiftLeft => Ok(AstBinaryOp::ShiftLeft),
             Token::ShiftRight => Ok(AstBinaryOp::ShiftRight),
-            _ => Err(ParseError::UnexpectedToken(value.clone())),
+            _ => Err(InnerParseError::UnexpectedToken(value.clone())),
         }
     }
 }
@@ -138,10 +149,14 @@ fn parse_exp_conditional(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Ex
 fn parse_exp_compassign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
     let t = cursor.next_or_error()?;
     if !t.is_compound_assign() {
-        return Err(ParseError::UnexpectedToken(t.clone()));
+        let t = t.clone();
+        let line = cursor.get_line();
+        return Err(InnerParseError::UnexpectedToken(t).set_line(line));
     }
     let op = t.compound_to_single();
-    let op = AstBinaryOp::try_from(&op)?;
+    let op = AstBinaryOp::try_from(&op);
+    let line = cursor.get_line();
+    let op = op.map_err(|err| err.set_line(line))?;
     let right = parse_exp(cursor, prec).map(Box::new)?;
     let operation = Exp::binary(op, Box::new(left.clone()), right);
     Ok(Exp::assignment(Box::new(left), Box::new(operation)))
@@ -162,7 +177,9 @@ fn parse_exp_postfixop(cursor: &mut Cursor, _prec: u64, left: Exp) -> Result<Exp
 
 fn parse_binary_op(cursor: &mut Cursor) -> Result<AstBinaryOp> {
     let next = cursor.next_or_error()?;
-    AstBinaryOp::try_from(next)
+    let next = AstBinaryOp::try_from(next);
+    let line = cursor.get_line();
+    next.map_err(|err| err.set_line(line))
 }
 
 fn parse_exp_binary(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp> {
@@ -191,34 +208,74 @@ fn parse_exp(cursor: &mut Cursor, min_prec: u64) -> Result<Exp> {
     Ok(left)
 }
 
-fn parse_type(types: &[Token]) -> Result<Type> {
+fn parse_signed_type(
+    types: &[Token],
+    is_specifier_present: bool,
+) -> std::result::Result<Type, InnerParseError> {
     match types {
         [Token::Long, Token::Int] | [Token::Int, Token::Long] | [Token::Long] => Ok(Type::Long),
         [Token::Int] => Ok(Type::Int),
-        _ => Err(ParseError::InvalidTypeSpecifiers(types.to_vec())),
+        [] if is_specifier_present => Ok(Type::Int),
+        _ => Err(InnerParseError::InvalidTypeSpecifiers(types.to_vec())),
     }
 }
 
-fn parse_storage_class(classes: &[Token]) -> Result<StorageClass> {
+fn parse_unsigned_type(types: &[Token]) -> std::result::Result<Type, InnerParseError> {
+    match types {
+        [Token::Long, Token::Int] | [Token::Int, Token::Long] | [Token::Long] => Ok(Type::ULong),
+        [Token::Int] | [] => Ok(Type::UInt),
+        _ => Err(InnerParseError::InvalidTypeSpecifiers(types.to_vec())),
+    }
+}
+
+fn parse_storage_class(classes: &[Token]) -> std::result::Result<StorageClass, InnerParseError> {
     match classes {
         [Token::Extern] => Ok(StorageClass::Extern),
         [Token::Static] => Ok(StorageClass::Static),
         [] => Ok(StorageClass::Auto),
-        _ => Err(ParseError::InvalidStorageClass(classes.to_vec())),
+        _ => Err(InnerParseError::InvalidStorageClass(classes.to_vec())),
+    }
+}
+
+fn set_sign_specifier(
+    sign_specifier: &mut Option<Token>,
+    next: Token,
+) -> std::result::Result<(), InnerParseError> {
+    use InnerParseError::DuplicateSignSpecifiers as SignSpecErr;
+    if let Some(previous) = sign_specifier {
+        return Err(SignSpecErr(previous.clone(), next));
+    } else {
+        *sign_specifier = Some(next);
+    }
+    Ok(())
+}
+
+fn parse_type(types: &[Token], sign: Option<Token>) -> std::result::Result<Type, InnerParseError> {
+    match sign {
+        Some(Token::Unsigned) => parse_unsigned_type(types),
+        Some(Token::Signed) => parse_signed_type(types, true),
+        _ => parse_signed_type(types, false),
     }
 }
 
 fn parse_specifiers(cursor: &mut Cursor) -> Result<(Type, StorageClass)> {
     let mut types = Vec::new();
     let mut storage_classes = Vec::new();
+    let mut sign = None;
     while let Some(token) = cursor.next_if(Token::is_specifier).cloned() {
-        match token {
-            Token::Int | Token::Long => types.push(token),
-            _ => storage_classes.push(token),
+        if token.is_sign_specifier() {
+            let line = cursor.get_line();
+            set_sign_specifier(&mut sign, token).map_err(|err| err.set_line(line))?;
+        } else if token.is_type_specifier() {
+            types.push(token);
+        } else {
+            storage_classes.push(token);
         }
     }
-    let rtype = parse_type(&types)?;
-    let storage_class = parse_storage_class(&storage_classes)?;
+    let line = cursor.get_line();
+    let set_line = |err: InnerParseError| err.set_line(line);
+    let rtype = parse_type(&types, sign).map_err(set_line)?;
+    let storage_class = parse_storage_class(&storage_classes).map_err(set_line)?;
 
     Ok((rtype, storage_class))
 }
@@ -228,9 +285,10 @@ fn parse_forinit(cursor: &mut Cursor) -> Result<AstForInit> {
     let peek = cursor.peek_or_error()?;
     if peek.is_specifier() {
         let dec = parse_declaration(cursor)?;
+        let line = cursor.get_line();
         match dec {
             Declaration::Var(vardec) => Ok(AstForInit::InitDecl(vardec)),
-            Declaration::Fun(_) => Err(ParseError::BadForInit),
+            Declaration::Fun(_) => Err(InnerParseError::BadForInit.set_line(line)),
         }
     } else {
         let exp = parse_optional_exp(cursor, &Token::Semicolon)?;
@@ -415,22 +473,24 @@ fn parse_statement_label_or_exp(cursor: &mut Cursor) -> Result<Statement> {
 }
 
 impl TryFrom<&Token> for AstUnaryOp {
-    type Error = ParseError;
-    fn try_from(value: &Token) -> Result<Self> {
+    type Error = InnerParseError;
+    fn try_from(value: &Token) -> std::result::Result<Self, InnerParseError> {
         match value {
             Token::Hyphen => Ok(Self::Negate),
             Token::Tilde => Ok(Self::Complement),
             Token::LogicalNot => Ok(Self::LogicalNot),
             Token::Increment => Ok(Self::PrefixIncrement),
             Token::Decrement => Ok(Self::PrefixDecrement),
-            _ => Err(ParseError::BadUnaryOp(value.clone())),
+            _ => Err(InnerParseError::BadUnaryOp(value.clone())),
         }
     }
 }
 
 fn parse_unary_operation(cursor: &mut Cursor) -> Result<Exp> {
     let next = cursor.next_or_error()?;
-    let op = AstUnaryOp::try_from(next)?;
+    let op = AstUnaryOp::try_from(next);
+    let line = cursor.get_line();
+    let op = op.map_err(|err| err.set_line(line))?;
     let inner = parse_factor(cursor).map(Box::new)?;
 
     Ok(Exp::unary(op, inner))
@@ -442,7 +502,8 @@ fn parse_arguments(cursor: &mut Cursor) -> Result<Vec<Exp>> {
     while !cursor.peek_is(&Token::CloseParanth) {
         let comma = cursor.bump_if(&Token::Comma);
         if comma && args.is_empty() {
-            return Err(ParseError::TrailingComma);
+            let line = cursor.get_line();
+            return Err(InnerParseError::TrailingComma.set_line(line));
         }
         let exp = parse_exp(cursor, 0)?;
         args.push(exp);
@@ -518,8 +579,18 @@ fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
     match peek {
         Token::Identifier(_) => parse_factor_identifier(cursor),
         Token::OpenParanth => parse_typecast_or_subexp(cursor),
+        Token::UnsignedLConst(u) => {
+            let constant = Exp::constant(AstConst::ULong(*u));
+            cursor.bump();
+            Ok(constant)
+        }
+        Token::UnsignedConst(u) => {
+            let constant = Exp::constant_from_unsigned(*u);
+            cursor.bump();
+            Ok(constant)
+        }
         Token::Constant(i) => {
-            let constant = Exp::constant_from(*i);
+            let constant = Exp::constant_from_signed(*i);
             cursor.bump();
             Ok(constant)
         }
@@ -529,7 +600,11 @@ fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
             Ok(constant)
         }
         t if t.is_unaryop() => parse_unary_operation(cursor),
-        _ => Err(ParseError::BadFactor(peek.clone())),
+        _ => {
+            let peek = peek.clone();
+            let line = cursor.get_line();
+            Err(InnerParseError::BadFactor(peek).set_line(line))
+        }
     }
 }
 
@@ -620,11 +695,15 @@ fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
                 fun_type,
             }))
         }
-        _ => Err(ParseError::UnexpectedToken(next.clone())),
+        _ => {
+            let next = next.clone();
+            let line = cursor.get_line();
+            Err(InnerParseError::UnexpectedToken(next.clone()).set_line(line))
+        }
     }
 }
 
-pub fn parse(tokens: &[Token]) -> Result<Ast> {
+pub fn parse(tokens: &[LinedToken]) -> Result<Ast> {
     let mut declarations = Vec::new();
     let mut cursor = Cursor::new(tokens);
 
