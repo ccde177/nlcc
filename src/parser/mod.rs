@@ -153,10 +153,12 @@ fn parse_exp_compassign(cursor: &mut Cursor, prec: u64, left: Exp) -> Result<Exp
         let line = cursor.get_line();
         return Err(InnerParseError::UnexpectedToken(t).set_line(line));
     }
+
     let op = t.compound_to_single();
     let op = AstBinaryOp::try_from(&op);
     let line = cursor.get_line();
     let op = op.map_err(|err| err.set_line(line))?;
+
     let right = parse_exp(cursor, prec).map(Box::new)?;
     let operation = Exp::binary(op, Box::new(left.clone()), right);
     Ok(Exp::assignment(Box::new(left), Box::new(operation)))

@@ -15,14 +15,15 @@ impl fmt::Display for UnaryOp {
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            BinaryOp::Shr => write!(f, "shr"),
             BinaryOp::Add => write!(f, "add"),
             BinaryOp::Sub => write!(f, "sub"),
             BinaryOp::Imul => write!(f, "imul"),
             BinaryOp::And => write!(f, "and"),
             BinaryOp::Or => write!(f, "or"),
             BinaryOp::Xor => write!(f, "xor"),
-            BinaryOp::Shl => write!(f, "sal"),
-            BinaryOp::Shr => write!(f, "sar"),
+            BinaryOp::Sal => write!(f, "sal"),
+            BinaryOp::Sar => write!(f, "sar"),
         }
     }
 }
@@ -51,6 +52,8 @@ impl fmt::Display for StaticInit {
         match self {
             Self::Int(i) => write!(f, "{i}"),
             Self::Long(i) => write!(f, "{i}"),
+            Self::UInt(u) => write!(f, "{u}"),
+            Self::ULong(u) => write!(f, "{u}"),
         }
     }
 }
@@ -94,7 +97,7 @@ impl fmt::Display for AsmTopLevelItem {
 
 impl fmt::Display for AsmAst {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for asm_toplevel_item in &self.functions {
+        for asm_toplevel_item in &self.asm_toplevel_items {
             write!(f, "{asm_toplevel_item}")?;
         }
         writeln!(f, ".section .note.GNU-stak,\"\",@progbits")
@@ -110,6 +113,10 @@ impl fmt::Display for Condition {
             Self::LE => write!(f, "le"),
             Self::G => write!(f, "g"),
             Self::GE => write!(f, "ge"),
+            Self::A => write!(f, "a"),
+            Self::AE => write!(f, "ae"),
+            Self::B => write!(f, "b"),
+            Self::BE => write!(f, "be"),
         }
     }
 }
@@ -190,6 +197,10 @@ impl fmt::Display for AsmInstruction {
                 let op_str = display_operand(op, *t);
                 write!(f, "idiv{t} {op_str}")
             }
+            Self::Div(t, op) => {
+                let op_str = display_operand(op, *t);
+                write!(f, "div{t} {op_str}")
+            }
             Self::Cdq(t) => {
                 if matches!(t, AsmType::Longword) {
                     write!(f, "cdq")
@@ -197,11 +208,11 @@ impl fmt::Display for AsmInstruction {
                     write!(f, "cqo")
                 }
             }
-            Self::Binary(t, BinaryOp::Shl, Operand::Reg(Register::Cx), dst) => {
+            Self::Binary(t, BinaryOp::Sal, Operand::Reg(Register::Cx), dst) => {
                 let dst_str = display_operand(dst, *t);
                 write!(f, "sal{t} %cl, {dst_str}")
             }
-            Self::Binary(t, BinaryOp::Shr, Operand::Reg(Register::Cx), dst) => {
+            Self::Binary(t, BinaryOp::Sar, Operand::Reg(Register::Cx), dst) => {
                 let dst_str = display_operand(dst, *t);
                 write!(f, "sar{t} %cl, {dst_str}")
             }
@@ -245,6 +256,9 @@ impl fmt::Display for AsmInstruction {
                     let operand_str = display_operand(operand, AsmType::Longword);
                     write!(f, "set{cond_code} {operand_str}")
                 }
+            }
+            Self::MovZX(_, _) => {
+                panic!("Should be replaced during fix-up stage");
             }
         }
     }

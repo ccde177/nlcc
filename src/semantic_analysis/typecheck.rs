@@ -46,6 +46,16 @@ impl GlobalSymTable {
         inner.keys().cloned().collect()
     }
 
+    pub fn get_type(&self, sym: &str) -> Option<Type> {
+        self.inner
+            .get()
+            .expect("Should be initialized")
+            .read()
+            .expect("Should not be poisoned")
+            .get(sym)
+            .map(|sym| sym.sym_type.clone())
+    }
+
     pub fn get_symbol(&self, sym: &str) -> Option<SymTableEntry> {
         self.inner
             .get()
@@ -101,17 +111,24 @@ pub enum InitValue {
 pub enum StaticInit {
     Int(i32),
     Long(i64),
+    UInt(u32),
+    ULong(u64),
 }
 
 impl StaticInit {
     pub fn is_zero(&self) -> bool {
-        matches!(self, Self::Int(0) | Self::Long(0))
+        matches!(
+            self,
+            Self::Int(0) | Self::Long(0) | Self::UInt(0) | Self::ULong(0)
+        )
     }
+
     pub fn is_long(&self) -> bool {
-        matches!(self, Self::Long(_))
+        matches!(self, Self::Long(_) | Self::ULong(_))
     }
+
     pub fn is_int(&self) -> bool {
-        matches!(self, Self::Int(_))
+        matches!(self, Self::Int(_) | Self::UInt(_))
     }
 }
 
@@ -257,25 +274,17 @@ fn typecheck_unary(op: AstUnaryOp, exp: Exp, sym_table: &mut SymTable) -> Result
 }
 
 fn typecheck_binary(op: AstBinaryOp, e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Exp> {
-    let e1 = typecheck_exp(e1.into(), sym_table)?; //.map(Box::new)?;
-    let e2 = typecheck_exp(e2.into(), sym_table)?; //.map(Box::new)?;
+    let e1 = typecheck_exp(e1.into(), sym_table)?;
+    let e2 = typecheck_exp(e2.into(), sym_table)?;
+    let t1 = e1.get_type().expect("Should have type after type checking");
+    let t2 = e2.get_type().expect("Should have type after type checking");
 
-    if matches!(op, AstBinaryOp::LogicalAnd | AstBinaryOp::LogicalOr) {
-        let e1 = Box::new(e1);
-        let e2 = Box::new(e2);
-        let binary_exp = Exp::binary(op, e1, e2);
-        return Ok(binary_exp.set_type(Type::Int));
-    }
-    let t1 = e1.get_type().expect("Should always have type");
-    let t2 = e2.get_type().expect("Should always have type");
     let common_type = Type::get_common(&t1, &t2);
     let converted_e1 = convert_to(e1, common_type.clone());
     let converted_e2 = convert_to(e2, common_type.clone());
     let binary = Exp::binary(op, Box::new(converted_e1), Box::new(converted_e2));
 
     let rtype = match op {
-        // In case of shift resulting type is a type of left, not a common type
-        o if o.is_shift() => t1,
         // Equality check result is Int(bool{0, 1})
         o if o.is_eq() => Type::Int,
         _ => common_type,
@@ -317,6 +326,8 @@ fn typecheck_constant(constant: AstConst) -> Result<Exp> {
     match constant {
         AstConst::Int(_) => Ok(Exp::constant(constant).set_type(Type::Int)),
         AstConst::Long(_) => Ok(Exp::constant(constant).set_type(Type::Long)),
+        AstConst::UInt(_) => Ok(Exp::constant(constant).set_type(Type::UInt)),
+        AstConst::ULong(_) => Ok(Exp::constant(constant).set_type(Type::ULong)),
     }
 }
 
@@ -332,12 +343,31 @@ fn typecheck_exp(exp: UntypedExp, sym_table: &mut SymTable) -> Result<Exp> {
         UE::Cast(t, e) => typecheck_cast(t, *e, sym_table),
         UE::Assignment(e1, e2) => typecheck_assignment(*e1, *e2, sym_table),
         UE::Unary(op, exp) => typecheck_unary(op, *exp, sym_table),
+        UE::Binary(op, src, dst) if op.is_shift() => typecheck_shift(op, *src, *dst, sym_table),
+        UE::Binary(op, src, dst) if op.is_logical() => typecheck_logical(op, *src, *dst, sym_table),
         UE::Binary(op, src, dst) => typecheck_binary(op, *src, *dst, sym_table),
         UE::Conditional(cond) => typecheck_conditional(cond, sym_table),
         UE::Call(f, args) => typecheck_call(f, args, sym_table),
         UE::Var(name) => typecheck_var(name, sym_table),
         UE::Constant(c) => typecheck_constant(c),
     }
+}
+
+fn typecheck_logical(op: AstBinaryOp, src: Exp, dst: Exp, sym_table: &mut SymTable) -> Result<Exp> {
+    let src = typecheck_exp(src.into(), sym_table).map(Box::new)?;
+    let dst = typecheck_exp(dst.into(), sym_table).map(Box::new)?;
+    let binary_exp = Exp::binary(op, src, dst);
+    return Ok(binary_exp.set_type(Type::Int));
+}
+
+fn typecheck_shift(op: AstBinaryOp, src: Exp, dst: Exp, sym_table: &mut SymTable) -> Result<Exp> {
+    let src = typecheck_exp(src.into(), sym_table).map(Box::new)?;
+    let dst = typecheck_exp(dst.into(), sym_table).map(Box::new)?;
+    let src_type = src
+        .get_type()
+        .expect("Should have type after type checking");
+    let binary_exp = Exp::binary(op, src, dst);
+    return Ok(binary_exp.set_type(src_type));
 }
 
 fn typecheck_return(e: Exp, sym_table: &mut SymTable) -> Result<Statement> {
@@ -475,27 +505,60 @@ fn typecheck_while_st(mut while_st: While, sym_table: &mut SymTable) -> Result<S
     Ok(Statement::While(while_st))
 }
 
-fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> {
-    let fun_type = fundec.fun_type;
+fn check_fundec_compatible(fundec: &FunDec, old_dec: &SymTableEntry) -> Result<()> {
+    let fun_type = &fundec.fun_type;
+    let is_static = fundec.storage_class.is_static();
     let has_body = fundec.body.is_some();
+    if &old_dec.sym_type != fun_type {
+        return Err(SemAnalysisError::IncompatibleFunDec(fundec.name.clone()));
+    }
+    let already_defined = old_dec.attrs.is_fun_defined();
+    if has_body && already_defined {
+        return Err(SemAnalysisError::FunctionRedefinition(fundec.name.clone()));
+    }
+
+    if old_dec.attrs.is_global() && is_static {
+        return Err(SemAnalysisError::StaticFunctionRedeclaredNonStatic(
+            fundec.name.clone(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn typecheck_params(
+    params: &[Identifier],
+    fun_type: &Type,
+    sym_table: &mut SymTable,
+) -> Result<()> {
+    let mut cn = CURRENT_RTYPE.write().expect("Should not be poisoned");
+    *cn = fun_type
+        .get_rtype()
+        .expect("Should have return type since it is a function")
+        .clone();
+
+    let ptypes = fun_type.get_ptypes().expect("Should always be Some");
+    for (param, ptype) in params.iter().zip(ptypes.iter()) {
+        let attrs = IdAttr::Local;
+        let entry = SymTableEntry {
+            sym_type: ptype.clone(),
+            attrs,
+        };
+        sym_table.insert(param.clone(), entry);
+    }
+    Ok(())
+}
+
+fn typecheck_fundec(mut fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> {
+    let has_body = fundec.body.is_some();
+    let fun_type = &fundec.fun_type;
     let mut already_defined = false;
     let is_static = fundec.storage_class.is_static();
     let mut global = !is_static;
 
     if let Some(old_dec) = sym_table.get(&fundec.name) {
-        if old_dec.sym_type != fun_type {
-            return Err(SemAnalysisError::IncompatibleFunDec(fundec.name));
-        }
+        check_fundec_compatible(&fundec, old_dec)?;
         already_defined = old_dec.attrs.is_fun_defined();
-        if has_body && already_defined {
-            return Err(SemAnalysisError::FunctionRedefinition(fundec.name));
-        }
-
-        if old_dec.attrs.is_global() && is_static {
-            return Err(SemAnalysisError::StaticFunctionRedeclaredNonStatic(
-                fundec.name.clone(),
-            ));
-        }
         global = old_dec.attrs.is_global();
     }
 
@@ -512,54 +575,36 @@ fn typecheck_fundec(fundec: FunDec, sym_table: &mut SymTable) -> Result<FunDec> 
     sym_table.insert(fundec.name.clone(), entry);
 
     if has_body {
-        let mut cn = CURRENT_RTYPE.write().expect("Should not be poisoned");
-        *cn = fun_type.get_rtype().unwrap().clone();
-        let ptypes = fun_type.get_ptypes().expect("Should always be Some");
-        for (param, ptype) in fundec.params.iter().zip(ptypes.iter()) {
-            let attrs = IdAttr::Local;
-            let entry = SymTableEntry {
-                sym_type: ptype.clone(),
-                attrs,
-            };
-            sym_table.insert(param.clone(), entry);
-        }
+        typecheck_params(&fundec.params, &fundec.fun_type, sym_table)?;
     }
 
-    let typechecked_body = fundec
+    fundec.body = fundec
         .body
         .map(|block| typecheck_block(block, sym_table))
         .transpose()?;
-    let typechecked = FunDec {
-        name: fundec.name,
-        body: typechecked_body,
-        params: fundec.params,
-        storage_class: fundec.storage_class,
-        fun_type,
-    };
 
-    Ok(typechecked)
+    Ok(fundec)
 }
 
 fn typecheck_vardec_extern(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
     if vardec.init.is_some() {
         return Err(SemAnalysisError::InitOnExternVar(vardec.name.clone()));
     }
-    if let Some(old_dec) = sym_table.get(&vardec.name) {
-        if old_dec.sym_type != vardec.var_type {
-            return Err(SemAnalysisError::IdentifierRedeclaration(
-                vardec.name.clone(),
-            ));
-        }
-    } else {
-        let entry = SymTableEntry {
+
+    let old_dec = sym_table
+        .entry(vardec.name.clone())
+        .or_insert_with(|| SymTableEntry {
             sym_type: vardec.var_type.clone(),
             attrs: IdAttr::Static {
                 init_val: InitValue::NoInit,
                 global: true,
             },
-        };
-        sym_table.insert(vardec.name.clone(), entry);
+        });
+
+    if old_dec.sym_type != vardec.var_type {
+        return Err(SemAnalysisError::IdentifierRedeclaration(vardec.name));
     }
+
     Ok(vardec)
 }
 
@@ -589,7 +634,8 @@ fn typecheck_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> 
 
 fn typecheck_vardec_static(vardec: VarDec, sym_table: &mut SymTable) -> Result<VarDec> {
     let initial_value = if vardec.init.is_some() {
-        get_static_init(vardec.init.clone().unwrap())?
+        let init = vardec.init.clone().unwrap();
+        get_static_init(init, &vardec.var_type)?
     } else {
         InitValue::Tentative
     };
@@ -630,11 +676,13 @@ fn typecheck_block(block: AstBlock, sym_table: &mut SymTable) -> Result<AstBlock
     Ok(AstBlock { items })
 }
 
-fn get_static_init(init: Exp) -> Result<InitValue> {
+fn get_static_init(init: Exp, t: &Type) -> Result<InitValue> {
     if let UntypedExp::Constant(init) = init.into() {
-        match init {
+        match init.convert_to(&t) {
             AstConst::Int(i) => Ok(StaticInit::Int(i)),
             AstConst::Long(i) => Ok(StaticInit::Long(i)),
+            AstConst::UInt(u) => Ok(StaticInit::UInt(u)),
+            AstConst::ULong(u) => Ok(StaticInit::ULong(u)),
         }
         .map(InitValue::Initial)
     } else {
@@ -647,10 +695,11 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
     use SemAnalysisError::FunctionRedefinition as FunRedefErr;
     use SemAnalysisError::IdentifierRedeclaration as IdRedecErr;
 
+    let is_extern = vardec.storage_class.is_extern();
     let mut init_val = InitValue::NoInit;
     if let Some(init_exp) = vardec.init.clone() {
-        init_val = get_static_init(init_exp)?;
-    } else if !vardec.storage_class.is_extern() {
+        init_val = get_static_init(init_exp, &vardec.var_type)?;
+    } else if !is_extern {
         init_val = InitValue::Tentative;
     }
 
@@ -660,7 +709,6 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
         if old_dec.sym_type != vardec.var_type {
             return Err(FunRedefErr(vardec.name.clone()));
         }
-        let is_extern = vardec.storage_class.is_extern();
         let is_old_global = old_dec.attrs.is_global();
         if is_extern {
             global = old_dec.attrs.is_global();
@@ -677,6 +725,7 @@ pub fn typecheck_toplevel_vardec(vardec: VarDec, sym_table: &mut SymTable) -> Re
             init_val = InitValue::Tentative;
         }
     }
+
     let attrs = IdAttr::Static { init_val, global };
     let entry = SymTableEntry {
         sym_type: vardec.var_type.clone(),

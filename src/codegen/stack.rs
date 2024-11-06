@@ -4,23 +4,26 @@ use crate::codegen::{AsmInstruction, AsmInstructions, AsmType, BinaryOp, Operand
 use std::collections::HashMap;
 
 pub fn allocate_stack(instructions: &mut AsmInstructions) {
+    use AsmInstruction as I;
     let mut sa = StackAllocator::new();
     for inst in instructions.iter_mut() {
         match inst {
-            AsmInstruction::SetCC(_, operand)
-            | AsmInstruction::Push(operand)
-            | AsmInstruction::Unary(_, _, operand)
-            | AsmInstruction::Idiv(_, operand) => {
+            I::SetCC(_, operand)
+            | I::Push(operand)
+            | I::Unary(_, _, operand)
+            | I::Idiv(_, operand)
+            | I::Div(_, operand) => {
                 *operand = sa.allocate_if_pseudo(operand.clone());
             }
-            AsmInstruction::Cmp(_, src, dst)
-            | AsmInstruction::Mov(_, src, dst)
-            | AsmInstruction::Binary(_, _, src, dst)
-            | AsmInstruction::Movsx(src, dst) => {
+            I::Cmp(_, src, dst)
+            | I::MovZX(src, dst)
+            | I::Mov(_, src, dst)
+            | I::Binary(_, _, src, dst)
+            | I::Movsx(src, dst) => {
                 *src = sa.allocate_if_pseudo(src.clone());
                 *dst = sa.allocate_if_pseudo(dst.clone());
             }
-            _ => (),
+            I::Call(_) | I::Jmp(_) | I::JmpCC(_, _) | I::Label(_) | I::Ret | I::Cdq(_) => (),
         }
     }
 
@@ -75,7 +78,7 @@ impl StackAllocator {
         AsmInstruction::Binary(
             AsmType::Quadword,
             BinaryOp::Sub,
-            Operand::Imm(stack_size),
+            Operand::Imm(stack_size as i128),
             sp,
         )
     }

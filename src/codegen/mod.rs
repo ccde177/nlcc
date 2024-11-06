@@ -14,10 +14,7 @@ use gen::gen_toplevel_item;
 pub fn codegen(ast: TAst) -> AsmAst {
     let TAst { toplevel_items } = ast;
     ASM_SYM_TABLE.init();
-    let functions = toplevel_items
-        .into_iter()
-        .map(gen_toplevel_item)
-        .collect::<Vec<_>>();
+    let asm_toplevel_items = toplevel_items.into_iter().map(gen_toplevel_item).collect();
 
-    AsmAst { functions }
+    AsmAst { asm_toplevel_items }
 }

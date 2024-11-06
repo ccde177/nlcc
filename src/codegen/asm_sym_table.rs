@@ -24,11 +24,11 @@ impl GlobalAsmSymTable {
             let entry = SYM_TABLE.get_symbol(&name).unwrap();
             let is_static = entry.attrs.is_static();
             let asm_entry = match entry.sym_type {
-                Type::Int => AsmSymTabEntry::Obj {
+                Type::Int | Type::UInt => AsmSymTabEntry::Obj {
                     asm_type: AsmType::Longword,
                     is_static,
                 },
-                Type::Long => AsmSymTabEntry::Obj {
+                Type::Long | Type::ULong => AsmSymTabEntry::Obj {
                     asm_type: AsmType::Quadword,
                     is_static,
                 },

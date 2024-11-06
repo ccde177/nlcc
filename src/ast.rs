@@ -415,6 +415,9 @@ impl AstBinaryOp {
     pub fn is_shift(&self) -> bool {
         matches!(self, Self::ShiftLeft | Self::ShiftRight)
     }
+    pub fn is_logical(&self) -> bool {
+        matches!(self, Self::LogicalAnd | Self::LogicalOr)
+    }
     pub fn is_eq(&self) -> bool {
         matches!(
             self,
@@ -448,11 +451,29 @@ impl Type {
         }
     }
 
+    pub fn get_size(&self) -> u64 {
+        match self {
+            Self::Int | Self::UInt => 4,
+            Self::Long | Self::ULong => 8,
+            Self::Fun { .. } => panic!("Attempt to get size of function type"),
+        }
+    }
+
     pub fn get_common(t1: &Self, t2: &Self) -> Self {
+        let t1_size = t1.get_size();
+        let t2_size = t2.get_size();
         if t1 == t2 {
             t1.clone()
+        } else if t1_size == t2_size {
+            if t1.is_signed() {
+                t2.clone()
+            } else {
+                t1.clone()
+            }
+        } else if t1_size > t2_size {
+            t1.clone()
         } else {
-            Self::Long
+            t2.clone()
         }
     }
 

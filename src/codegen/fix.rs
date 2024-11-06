@@ -17,6 +17,18 @@ fn fix_imul(instruction: AsmInstruction) -> AsmInstructions {
     result
 }
 
+fn fix_div(instruction: AsmInstruction) -> AsmInstructions {
+    let mut result = AsmInstructions::new();
+    if let AsmInstruction::Div(t, operand) = instruction {
+        let temp_reg = Register::R10;
+        let mov1 = AsmInstruction::Mov(t, operand, Operand::Reg(temp_reg));
+        let idiv = AsmInstruction::Idiv(t, Operand::Reg(temp_reg));
+        result.push(mov1);
+        result.push(idiv);
+    }
+    result
+}
+
 fn fix_idiv(instruction: AsmInstruction) -> AsmInstructions {
     let mut result = AsmInstructions::new();
     if instruction.is_idiv_constant() {
@@ -121,7 +133,7 @@ fn fix_truncate(mut instr: AsmInstruction) -> AsmInstructions {
     let mut result = AsmInstructions::new();
     if let AsmInstruction::Mov(AsmType::Longword, Operand::Imm(src), _) = &mut instr {
         let v = *src as i32;
-        *src = i64::from(v);
+        *src = i128::from(v);
     }
     result.push(instr);
     result
@@ -150,14 +162,38 @@ fn fix_with_fixer(
     }
 }
 
+pub fn fix_zero_extend(instruction: AsmInstruction) -> AsmInstructions {
+    use AsmInstruction as I;
+    let mut result = AsmInstructions::new();
+    if let I::MovZX(src, dst) = instruction {
+        match dst {
+            op if op.is_reg() => {
+                let mov = I::Mov(AsmType::Longword, src, op);
+                result.push(mov);
+            }
+            op if op.is_mem() => {
+                let r11 = Operand::Reg(Register::R11);
+                let mov1 = I::Mov(AsmType::Longword, src, r11.clone());
+                let mov2 = I::Mov(AsmType::Quadword, r11, op);
+                result.push(mov1);
+                result.push(mov2);
+            }
+            _ => (),
+        }
+    }
+    result
+}
+
 pub fn fix_instructions(instructions: &mut AsmInstructions) {
     use AsmInstruction as I;
     fix_with_fixer(instructions, I::is_mul_sndmem, fix_imul);
     fix_with_fixer(instructions, I::is_idiv_constant, fix_idiv);
+    fix_with_fixer(instructions, I::is_div_constant, fix_div);
     fix_with_fixer(instructions, I::is_movsx_invalid, fix_movsx);
     fix_with_fixer(instructions, I::mem_operands, fix_two_memoperands);
     fix_with_fixer(instructions, I::is_cmp_sndimm, fix_cmp_sndimm);
     fix_with_fixer(instructions, I::is_mov_immtoobig, fix_mov_imm);
     fix_with_fixer(instructions, I::is_imm_toobig, fix_imm_toobig);
     fix_with_fixer(instructions, I::is_truncate_imm_toobig, fix_truncate);
+    fix_with_fixer(instructions, I::is_zero_extend, fix_zero_extend);
 }

@@ -22,7 +22,7 @@ fn get_uniq_label() -> String {
 
 fn emit_postfix_incdec(op: AstUnaryOp, exp: Exp, instructions: &mut TInstructions) -> TValue {
     let t = exp.get_type().expect("Should have type after typechecking");
-    let one = AstConst::new(&t, 1).expect("Should always be Some");
+    let one = AstConst::Int(1).convert_to(&t);
     let one = TValue::Constant(one);
     let op = if matches!(op, AstUnaryOp::PostfixIncrement) {
         TBinaryOp::Add
@@ -42,7 +42,7 @@ fn emit_postfix_incdec(op: AstUnaryOp, exp: Exp, instructions: &mut TInstruction
 
 fn emit_prefix_incdec(op: AstUnaryOp, exp: Exp, instructions: &mut TInstructions) -> TValue {
     let t = exp.get_type().expect("Should have type after typechecking");
-    let one = AstConst::new(&t, 1).expect("Should always be Some");
+    let one = AstConst::Int(1).convert_to(&t);
     let one = TValue::Constant(one);
     let op = if matches!(op, AstUnaryOp::PrefixIncrement) {
         TBinaryOp::Add
@@ -220,13 +220,19 @@ fn emit_cast(t: &Type, e: Exp, instructions: &mut TInstructions) -> TValue {
         return result;
     }
     let dst = new_tacky_var(t.clone());
-    let cast_instr = if t == &Type::Long {
+
+    let t_size = t.get_size();
+    let inner_t_size = inner_type.get_size();
+    let cast_instr = if t_size == inner_t_size {
+        TInstruction::Copy(result, dst.clone())
+    } else if t_size < inner_t_size {
+        TInstruction::Truncate(result, dst.clone())
+    } else if inner_type.is_signed() {
         TInstruction::SignExtend(result, dst.clone())
     } else {
-        TInstruction::Truncate(result, dst.clone())
+        TInstruction::ZeroExtend(result, dst.clone())
     };
     instructions.push(cast_instr);
-
     dst
 }
 
@@ -535,7 +541,9 @@ fn emit_static_symbols() -> Vec<TopLevelItem> {
         if let Some(init) = entry.get_init() {
             let tentative_init = match entry.sym_type {
                 Type::Int => StaticInit::Int(0),
+                Type::UInt => StaticInit::UInt(0),
                 Type::Long => StaticInit::Long(0),
+                Type::ULong => StaticInit::ULong(0),
                 Type::Fun { .. } => continue,
             };
             let init = init.get_static_init().unwrap_or(tentative_init);

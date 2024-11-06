@@ -12,6 +12,8 @@ fn get_const_type(c: AstConst) -> AsmType {
     match c {
         AstConst::Int(_) => AsmType::Longword,
         AstConst::Long(_) => AsmType::Quadword,
+        AstConst::ULong(_) => AsmType::Quadword,
+        AstConst::UInt(_) => AsmType::Longword,
     }
 }
 
@@ -22,6 +24,20 @@ fn get_asm_type(value: &TValue) -> AsmType {
     }
 }
 
+fn shiftop_to_asm(op: TBinaryOp, is_signed: bool) -> BinaryOp {
+    match op {
+        TBinaryOp::ShiftRight => {
+            if is_signed {
+                BinaryOp::Sar
+            } else {
+                BinaryOp::Shr
+            }
+        }
+        TBinaryOp::ShiftLeft => BinaryOp::Sal,
+        _ => panic!("Attempt to get shift asm operator from {op:?}"),
+    }
+}
+
 fn tshift_to_asm(
     op: TBinaryOp,
     val1: TValue,
@@ -29,14 +45,15 @@ fn tshift_to_asm(
     val3: TValue,
     instructions: &mut AsmInstructions,
 ) {
+    let is_signed = val1.get_type().is_signed();
     let src1_type = get_asm_type(&val1);
     let src2_type = get_asm_type(&val2);
     let src1 = Operand::from(val1);
     let src2 = Operand::from(val2);
     let dst = Operand::from(val3);
-
     let cx = Operand::Reg(Register::Cx);
-    let op = BinaryOp::from(op);
+    let op = shiftop_to_asm(op, is_signed);
+
     let mov = AsmInstruction::Mov(src1_type, src1, dst.clone());
     let mov2 = AsmInstruction::Mov(src2_type, src2, cx.clone());
     let operation = AsmInstruction::Binary(src1_type, op, cx, dst);
@@ -53,23 +70,35 @@ fn tdivrem_to_asm(
     val3: TValue,
     instructions: &mut AsmInstructions,
 ) {
+    let is_signed = val1.get_type().is_signed();
+    let is_rem = op.is_rem();
+
     let src1_type = get_asm_type(&val1);
     let src1 = Operand::from(val1);
     let src2 = Operand::from(val2);
     let dst = Operand::from(val3);
-    let is_rem = op.is_rem();
 
     let ax = Operand::Reg(Register::Ax);
     let dx = Operand::Reg(Register::Dx);
     let mov1 = AsmInstruction::Mov(src1_type, src1, ax.clone());
-    let cdq = AsmInstruction::Cdq(src1_type);
-    let idiv = AsmInstruction::Idiv(src1_type, src2);
+    let cdq_or_mov = if is_signed {
+        AsmInstruction::Cdq(src1_type)
+    } else {
+        AsmInstruction::Mov(src1_type, Operand::Imm(0), dx.clone())
+    };
+
+    let idiv_or_div = if is_signed {
+        AsmInstruction::Idiv(src1_type, src2)
+    } else {
+        AsmInstruction::Div(src1_type, src2)
+    };
+
     let last = if is_rem { dx } else { ax };
     let mov2 = AsmInstruction::Mov(src1_type, last, dst);
 
     instructions.push(mov1);
-    instructions.push(cdq);
-    instructions.push(idiv);
+    instructions.push(cdq_or_mov);
+    instructions.push(idiv_or_div);
     instructions.push(mov2);
 }
 
@@ -93,6 +122,18 @@ fn tbinary_to_asm(
     instructions.push(operation);
 }
 
+fn relative_to_condition(op: &TBinaryOp) -> Condition {
+    match op {
+        TBinaryOp::IsGreaterOrEqual => Condition::GE,
+        TBinaryOp::IsLessOrEqual => Condition::LE,
+        TBinaryOp::IsGreaterThan => Condition::G,
+        TBinaryOp::IsLessThan => Condition::L,
+        TBinaryOp::IsEqual => Condition::E,
+        TBinaryOp::IsNotEqual => Condition::NE,
+        _ => panic!("Attempt to get conditional code from not a realative operator"),
+    }
+}
+
 fn trelational_to_asm(
     op: TBinaryOp,
     src1: TValue,
@@ -100,6 +141,7 @@ fn trelational_to_asm(
     dst: TValue,
     instructions: &mut AsmInstructions,
 ) {
+    let is_signed = src1.get_type().is_signed();
     let src1_type = get_asm_type(&src1);
     let dst_type = get_asm_type(&dst);
     let src1 = Operand::from(src1);
@@ -107,7 +149,12 @@ fn trelational_to_asm(
     let dst = Operand::from(dst);
     let cmp = AsmInstruction::Cmp(src1_type, src2, src1);
     let mov = AsmInstruction::Mov(dst_type, Operand::Imm(0), dst.clone());
-    let setcc = AsmInstruction::SetCC(Condition::from(op), dst);
+    let condition = if is_signed {
+        relative_to_condition(&op).to_signed()
+    } else {
+        relative_to_condition(&op).to_unsigned()
+    };
+    let setcc = AsmInstruction::SetCC(condition, dst);
 
     instructions.push(cmp);
     instructions.push(mov);
@@ -132,6 +179,9 @@ fn tacky_to_asm(body: TInstructions, instructions: &mut AsmInstructions) {
     use TInstruction as TI;
     for inst in body {
         match inst {
+            TI::ZeroExtend(src, dst) => {
+                tzx_to_asm(src, dst, instructions);
+            }
             TI::Unary(TUnaryOp::LogicalNot, src, dst) => {
                 tlogical_not_to_asm(src, dst, instructions);
             }
@@ -159,6 +209,13 @@ fn tacky_to_asm(body: TInstructions, instructions: &mut AsmInstructions) {
     }
 }
 
+fn tzx_to_asm(src: TValue, dst: TValue, instructions: &mut AsmInstructions) {
+    let src = Operand::from(src);
+    let dst = Operand::from(dst);
+    let mzx = AsmInstruction::MovZX(src, dst);
+    instructions.push(mzx);
+}
+
 fn tcall_to_asm(
     name: Identifier,
     args: Vec<TValue>,
@@ -183,7 +240,7 @@ fn tcall_to_asm(
         let allocate_stack = AsmInstruction::Binary(
             AsmType::Quadword,
             BinaryOp::Sub,
-            Operand::Imm(stack_padding as i64),
+            Operand::Imm(stack_padding as i128),
             sp,
         );
         instructions.push(allocate_stack);
@@ -231,7 +288,7 @@ fn tcall_to_asm(
         let dealloc = AsmInstruction::Binary(
             AsmType::Quadword,
             BinaryOp::Add,
-            Operand::Imm(bytes_to_remove as i64),
+            Operand::Imm(bytes_to_remove as i128),
             sp,
         );
         instructions.push(dealloc);

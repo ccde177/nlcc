@@ -4,7 +4,7 @@ use crate::tacky::{StaticVariable, TBinaryOp, TUnaryOp, TValue};
 
 #[derive(Debug)]
 pub struct AsmAst {
-    pub functions: Vec<AsmTopLevelItem>,
+    pub asm_toplevel_items: Vec<AsmTopLevelItem>,
 }
 
 pub type AsmInstructions = Vec<AsmInstruction>;
@@ -42,6 +42,7 @@ pub enum AsmInstruction {
     Push(Operand),
     Mov(AsmType, Operand, Operand),
     Movsx(Operand, Operand),
+    MovZX(Operand, Operand),
     Unary(AsmType, UnaryOp, Operand),
     Binary(AsmType, BinaryOp, Operand, Operand),
     Cmp(AsmType, Operand, Operand),
@@ -49,6 +50,7 @@ pub enum AsmInstruction {
     JmpCC(Condition, Identifier),
     SetCC(Condition, Operand),
     Label(Identifier),
+    Div(AsmType, Operand),
     Idiv(AsmType, Operand),
     Cdq(AsmType),
     Ret,
@@ -58,10 +60,38 @@ pub enum AsmInstruction {
 pub enum Condition {
     E,
     NE,
+    //Signed:
     G,
     GE,
     L,
     LE,
+    //Unsigned:
+    A,
+    AE,
+    B,
+    BE,
+}
+
+impl Condition {
+    pub fn to_unsigned(self) -> Self {
+        match self {
+            Self::LE => Self::BE,
+            Self::L => Self::B,
+            Self::GE => Self::AE,
+            Self::G => Self::A,
+            _ => self,
+        }
+    }
+
+    pub fn to_signed(self) -> Self {
+        match self {
+            Self::BE => Self::LE,
+            Self::B => Self::L,
+            Self::AE => Self::GE,
+            Self::A => Self::G,
+            _ => self,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -72,7 +102,7 @@ pub enum UnaryOp {
 
 #[derive(Clone, Debug)]
 pub enum Operand {
-    Imm(i64),
+    Imm(i128),
     Reg(Register),
     Pseudo(Identifier),
     Stack(i64),
@@ -87,7 +117,11 @@ pub enum BinaryOp {
     And,
     Xor,
     Or,
-    Shl,
+    //(Un)signed left
+    Sal,
+    //Signed right
+    Sar,
+    //Unsigned right
     Shr,
 }
 
@@ -106,6 +140,11 @@ pub enum Register {
 }
 
 impl AsmInstruction {
+    #[inline]
+    pub fn is_zero_extend(&self) -> bool {
+        matches!(self, Self::MovZX(_, _))
+    }
+
     pub fn mem_operands(&self) -> bool {
         match self {
             Self::Binary(_, BinaryOp::Imul, _, _) => false,
@@ -117,7 +156,7 @@ impl AsmInstruction {
     }
 
     pub fn is_truncate_imm_toobig(&self) -> bool {
-        matches!(self, Self::Mov(AsmType::Longword, Operand::Imm(i), _) if *i > i64::from(i32::MAX) || *i < i64::from(i32::MIN))
+        matches!(self, Self::Mov(AsmType::Longword, Operand::Imm(i), _) if *i > i128::from(i32::MAX) || *i < i128::from(i32::MIN))
     }
 
     pub fn is_movsx_invalid(&self) -> bool {
@@ -139,13 +178,17 @@ impl AsmInstruction {
         matches!(self, Self::Idiv(_, Operand::Imm(_)))
     }
 
+    pub fn is_div_constant(&self) -> bool {
+        matches!(self, Self::Div(_, Operand::Imm(_)))
+    }
+
     pub fn is_mov_immtoobig(&self) -> bool {
         matches!(self,
-            Self::Mov(AsmType::Quadword, Operand::Imm(src), _) if *src > i64::from(i32::MAX) || *src < i64::from(i32::MIN))
+            Self::Mov(AsmType::Quadword, Operand::Imm(src), _) if *src > i128::from(i32::MAX) || *src < i128::from(i32::MIN))
     }
 
     pub fn is_imm_toobig(&self) -> bool {
-        let cmp = |i| i > i64::from(i32::MAX) || i < i64::from(i32::MIN);
+        let cmp = |i| i > i128::from(i32::MAX) || i < i128::from(i32::MIN);
         match self {
             Self::Binary(
                 AsmType::Quadword,
@@ -181,8 +224,10 @@ impl Operand {
 impl From<AstConst> for Operand {
     fn from(value: AstConst) -> Self {
         match value {
-            AstConst::Int(i) => Self::Imm(i64::from(i)),
-            AstConst::Long(i) => Self::Imm(i),
+            AstConst::Int(i) => Self::Imm(i128::from(i)),
+            AstConst::Long(i) => Self::Imm(i128::from(i)),
+            AstConst::UInt(u) => Self::Imm(i128::from(u)),
+            AstConst::ULong(u) => Self::Imm(i128::from(u)),
         }
     }
 }
@@ -215,8 +260,8 @@ impl From<StaticVariable> for AsmStaticVar {
         } = value;
 
         let alignment = match init {
-            StaticInit::Int(_) => 4,
-            StaticInit::Long(_) => 8,
+            StaticInit::Int(_) | StaticInit::UInt(_) => 4,
+            StaticInit::Long(_) | StaticInit::ULong(_) => 8,
         };
 
         AsmStaticVar {
@@ -243,25 +288,9 @@ impl From<TBinaryOp> for BinaryOp {
             TBinaryOp::BitwiseAnd => Self::And,
             TBinaryOp::BitwiseOr => Self::Or,
             TBinaryOp::BitwiseXor => Self::Xor,
-            TBinaryOp::ShiftLeft => Self::Shl,
-            TBinaryOp::ShiftRight => Self::Shr,
+            TBinaryOp::ShiftLeft => Self::Sal,
+            TBinaryOp::ShiftRight => Self::Sar,
             _ => unimplemented!(),
-        }
-    }
-}
-
-//TODO: Change to TryFrom<_>
-impl From<TBinaryOp> for Condition {
-    fn from(value: TBinaryOp) -> Self {
-        match value {
-            TBinaryOp::IsGreaterThan => Self::G,
-
-            TBinaryOp::IsGreaterOrEqual => Self::GE,
-            TBinaryOp::IsEqual => Self::E,
-            TBinaryOp::IsNotEqual => Self::NE,
-            TBinaryOp::IsLessThan => Self::L,
-            TBinaryOp::IsLessOrEqual => Self::LE,
-            _ => unreachable!(),
         }
     }
 }

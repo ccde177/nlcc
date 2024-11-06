@@ -1,5 +1,5 @@
 use crate::ast::{AstBinaryOp, AstConst, AstUnaryOp, Identifier, Type};
-use crate::semantic_analysis::StaticInit;
+use crate::semantic_analysis::{StaticInit, SYM_TABLE};
 
 #[derive(Clone, Debug)]
 pub struct TAst {
@@ -34,6 +34,7 @@ pub enum TopLevelItem {
 pub enum TInstruction {
     Truncate(TValue, TValue),   //(src, dst)
     SignExtend(TValue, TValue), // (src,dst)
+    ZeroExtend(TValue, TValue),
     Return(TValue),
     Unary(TUnaryOp, TValue, TValue),
     Binary(TBinaryOp, TValue, TValue, TValue),
@@ -73,6 +74,15 @@ pub enum TBinaryOp {
 pub enum TValue {
     Constant(AstConst),
     Var(Identifier),
+}
+
+impl TValue {
+    pub fn get_type(&self) -> Type {
+        match self {
+            Self::Constant(c) => c.get_type(),
+            Self::Var(name) => SYM_TABLE.get_type(name).expect("Should be in symbol table"),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
