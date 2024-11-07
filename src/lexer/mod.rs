@@ -9,8 +9,9 @@ pub use lexer_error::{InnerLexError, LexError};
 pub use token::{LinedToken, Token};
 
 pub type Tokens = Vec<LinedToken>;
+type Result<T> = std::result::Result<T, InnerLexError>;
 
-fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token, InnerLexError> {
+fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token> {
     match (first, second, third) {
         ('>', '>', '=') => Ok(Token::AssignShr),
         ('<', '<', '=') => Ok(Token::AssignShl),
@@ -20,7 +21,7 @@ fn lex_mcharop3(first: char, second: char, third: char) -> Result<Token, InnerLe
     }
 }
 
-fn lex_mcharop2(first: char, second: char) -> Result<Token, InnerLexError> {
+fn lex_mcharop2(first: char, second: char) -> Result<Token> {
     match (first, second) {
         ('-', '-') => Ok(Token::Decrement),
         ('+', '+') => Ok(Token::Increment),
@@ -44,7 +45,7 @@ fn lex_mcharop2(first: char, second: char) -> Result<Token, InnerLexError> {
     }
 }
 
-fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
+fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token> {
     let first = cursor.take().expect("Is always Some");
     let second = cursor.peek();
     let eq = cursor.peek_2nd().filter(|c| *c == '=');
@@ -70,7 +71,7 @@ fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     Token::try_from(first)
 }
 
-fn check_const_bad_suffix(cursor: &mut Cursor) -> Result<(), InnerLexError> {
+fn check_const_bad_suffix(cursor: &mut Cursor) -> Result<()> {
     let is_bad = |c: &char| c.is_alphabetic() || *c == '_';
     if let Some(bad_suffix) = cursor.peek().filter(is_bad) {
         return Err(InnerLexError::BadConstantSuffix(bad_suffix));
@@ -78,11 +79,7 @@ fn check_const_bad_suffix(cursor: &mut Cursor) -> Result<(), InnerLexError> {
     Ok(())
 }
 
-fn lex_dfpconst_h(
-    cursor: &mut Cursor,
-    start: &str,
-    mut count: usize,
-) -> Result<Token, InnerLexError> {
+fn lex_dfpconst_h(cursor: &mut Cursor, start: &str, mut count: usize) -> Result<Token> {
     let is_e = |c: char| matches!(c, 'e' | 'E');
     let is_sign = |c: char| matches!(c, '+' | '-');
     let predicate = |c: &char| matches!(c, '0'..='9' | '.') || is_e(*c);
@@ -101,13 +98,13 @@ fn lex_dfpconst_h(
         .map(Token::FPDouble)
 }
 
-fn lex_dfpconst(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
+fn lex_dfpconst(cursor: &mut Cursor) -> Result<Token> {
     let start = cursor.as_str();
     let count = 0;
     lex_dfpconst_h(cursor, start, count)
 }
 
-fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
+fn lex_constant(cursor: &mut Cursor) -> Result<Token> {
     let start = cursor.as_str();
     let mut count = 0;
 
@@ -134,19 +131,21 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     let const_str = &start[..count];
 
     let constant = if is_unsigned {
-        let parsed = const_str.parse::<u64>().expect("Should never fail");
-        if is_long {
-            Token::UnsignedLConst(parsed)
-        } else {
-            Token::UnsignedConst(parsed)
-        }
+        let unsigned_long = |u: u64| Token::UnsignedLConst(u);
+        let unsigned_int = |u: u64| Token::UnsignedConst(u);
+        let wrapper = if is_long { unsigned_long } else { unsigned_int };
+        const_str
+            .parse::<u64>()
+            .map(wrapper)
+            .expect("Should never fail")
     } else {
-        let parsed = const_str.parse::<i64>().expect("Should never fail");
-        if is_long {
-            Token::LConstant(parsed)
-        } else {
-            Token::Constant(parsed)
-        }
+        let long = |i: i64| Token::LConstant(i);
+        let int = |i: i64| Token::Constant(i);
+        let wrapper = if is_long { long } else { int };
+        const_str
+            .parse::<i64>()
+            .map(wrapper)
+            .expect("Should never fail")
     };
 
     Ok(constant)
@@ -164,7 +163,7 @@ fn lex_identifier(cursor: &mut Cursor) -> Token {
     Token::from(&start[..len])
 }
 
-pub fn lex(input: &str) -> Result<Tokens, LexError> {
+pub fn lex(input: &str) -> std::result::Result<Tokens, LexError> {
     let mut tokens = Tokens::with_capacity(input.len());
     let mut cursor = Cursor::new(input);
     cursor.skip_whitespaces();
