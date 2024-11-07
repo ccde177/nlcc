@@ -70,12 +70,65 @@ fn lex_mcharoperator(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     Token::try_from(first)
 }
 
+fn check_const_bad_suffix(cursor: &mut Cursor) -> Result<(), InnerLexError> {
+    let is_bad = |c: &char| c.is_alphabetic() || *c == '_';
+    if let Some(bad_suffix) = cursor.peek().filter(is_bad) {
+        return Err(InnerLexError::BadConstantSuffix(bad_suffix));
+    }
+    Ok(())
+}
+
+fn lex_dconstant_h(
+    cursor: &mut Cursor,
+    start: &str,
+    mut count: usize,
+) -> Result<Token, InnerLexError> {
+    let mut met_e = false;
+    let is_e = |c: char| matches!(c, 'e' | 'E');
+    let is_sign = |c: char| matches!(c, '+' | '-');
+    let predicate = |c: &char| matches!(c, '0'..='9' | '.') || is_e(*c);
+
+    while let Some(peek) = cursor.peek().filter(predicate) {
+        let peek_is_e = is_e(peek);
+        if peek_is_e && met_e {
+            return Err(InnerLexError::BadFloatingPointConstant(
+                start[..count].to_owned(),
+            ));
+        }
+        cursor.take();
+        let met_sign = peek_is_e && cursor.skip_if(is_sign);
+
+        met_e = peek_is_e;
+        count += 1 + usize::from(met_sign);
+    }
+
+    check_const_bad_suffix(cursor)?;
+
+    let f64_result = start[..count]
+        .parse::<f64>()
+        .map_err(|_| InnerLexError::BadFloatingPointConstant(start[..count].to_owned()))?;
+
+    Ok(Token::FPDouble(f64_result))
+}
+
+fn lex_dconstant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
+    let start = cursor.as_str();
+    let count = 0;
+    lex_dconstant_h(cursor, start, count)
+}
+
 fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     let start = cursor.as_str();
     let mut count = 0;
 
     while cursor.skip_if(|c| c.is_ascii_digit()) {
         count += 1;
+    }
+
+    let predicate = |c: &char| matches!(c, '.' | 'E' | 'e');
+    let is_float = cursor.peek().filter(predicate).is_some();
+    if is_float {
+        return lex_dconstant_h(cursor, start, count);
     }
 
     let mut is_long = cursor.bump_if('l') || cursor.bump_if('L');
@@ -86,11 +139,7 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
         is_long = cursor.bump_if('l') || cursor.bump_if('L');
     }
 
-    if let Some(next) = cursor.peek() {
-        if next.is_alphabetic() || next == '_' {
-            return Err(InnerLexError::BadConstantSuffix(next));
-        }
-    }
+    check_const_bad_suffix(cursor)?;
 
     let const_str = &start[..count];
 
@@ -130,37 +179,28 @@ pub fn lex(input: &str) -> Result<Tokens, LexError> {
     let mut cursor = Cursor::new(input);
     cursor.skip_whitespaces();
 
-    while let Some(next) = cursor.peek() {
+    while let Some(peek) = cursor.peek() {
         let ln = cursor.get_ln();
         let set_line = |t: Token| LinedToken::new(t, ln);
         let set_err_line = |err: InnerLexError| err.set_line(ln);
-        match next {
+        let token = match peek {
             ';' | '{' | '}' | '(' | ')' | '~' | '?' | ':' | ',' => {
-                let token = Token::try_from(next)
-                    .map(set_line)
-                    .expect("Should never fail");
-                tokens.push(token);
                 cursor.take();
+                Token::try_from(peek)
             }
             '%' | '^' | '/' | '*' | '-' | '+' | '=' | '!' | '>' | '<' | '|' | '&' => {
-                let token = lex_mcharoperator(&mut cursor)
-                    .map(set_line)
-                    .map_err(set_err_line)?;
-                tokens.push(token);
+                lex_mcharoperator(&mut cursor)
             }
-            '_' | 'a'..='z' | 'A'..='Z' => {
-                let token = lex_identifier(&mut cursor);
-                tokens.push(set_line(token));
-            }
-            '0'..='9' => {
-                let token = lex_constant(&mut cursor)
-                    .map(set_line)
-                    .map_err(set_err_line)?;
-                tokens.push(token);
-            }
-            _ => return Err(InnerLexError::UnexpectedChar(next).set_line(ln)),
+            '_' | 'a'..='z' | 'A'..='Z' => Ok(lex_identifier(&mut cursor)),
+            '0'..='9' => lex_constant(&mut cursor),
+            '.' => lex_dconstant(&mut cursor),
+            _ => Err(InnerLexError::UnexpectedChar(peek)),
         }
+        .map(set_line)
+        .map_err(set_err_line)?;
+        tokens.push(token);
         cursor.skip_whitespaces();
     }
+
     Ok(tokens)
 }

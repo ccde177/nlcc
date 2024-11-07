@@ -6,6 +6,8 @@ pub enum InnerLexError {
     BadMcharOperator(String),
     BadConstantSuffix(char),
     ExpectedOperatorOrSeparator(char),
+    BadFloatingPointConstant(String),
+    UnexpectedEof,
 }
 
 pub struct LexError {
@@ -35,6 +37,8 @@ impl error::Error for InnerLexError {}
 impl fmt::Display for InnerLexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::BadFloatingPointConstant(s) => write!(f, "bad floating point constant {s}"),
+            Self::UnexpectedEof => write!(f, "reached unexpected end of file"),
             Self::UnexpectedChar(c) => write!(f, "unexpected character: {c}"),
             Self::BadMcharOperator(s) => write!(f, "bad multi-char operator: {s}"),
             Self::BadConstantSuffix(c) => write!(f, "bad constant suffix: {c}"),

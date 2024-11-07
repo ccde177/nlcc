@@ -1,6 +1,6 @@
 [package]
 name = "nlcc"
-version = "0.12.5"
+version = "0.13.5"
 edition = "2021"
 license = "MIT"
 categories = ["compilers"]
@@ -16,7 +16,7 @@ name = "nlcc"
 path = "src/bin/driver/main.rs"
 
 [features]
-default = ["emission"]
+default = ["lexer"]
 lexer = []
 parser = ["lexer"]
 semantic_analysis = ["parser"]

@@ -13,7 +13,7 @@ impl From<LinedToken> for Token {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Unsigned,
     Signed,
@@ -28,6 +28,7 @@ pub enum Token {
     Constant(i64),
     LConstant(i64),
     UnsignedLConst(u64),
+    FPDouble(f64),
     Semicolon,
     CloseCurly,
     Tilde,
