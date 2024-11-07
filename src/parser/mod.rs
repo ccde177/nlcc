@@ -76,8 +76,7 @@ fn parse_params(cursor: &mut Cursor) -> Result<(Vec<Type>, Vec<Identifier>)> {
     let mut params = Vec::new();
     let mut ptypes = Vec::new();
 
-    //TODO: Maybe add || cursor.bump_if(&Token::CloseParanth)
-    let void = cursor.bump_if(&Token::Void);
+    let void = cursor.bump_if(&Token::Void) || cursor.peek_is(&Token::CloseParanth);
 
     if void {
         return Ok((ptypes, params));
