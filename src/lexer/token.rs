@@ -17,6 +17,7 @@ impl From<LinedToken> for Token {
 pub enum Token {
     Unsigned,
     Signed,
+    Double,
     Int,
     Identifier(String),
     OpenParanth,
@@ -239,6 +240,7 @@ impl TryFrom<char> for Token {
 impl From<&str> for Token {
     fn from(s: &str) -> Self {
         match s {
+            "double" => Self::Double,
             "unsigned" => Self::Unsigned,
             "signed" => Self::Signed,
             "int" => Self::Int,
