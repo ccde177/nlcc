@@ -253,6 +253,13 @@ fn set_sign_specifier(
 }
 
 fn parse_type(types: &[Token], sign: Option<Token>) -> std::result::Result<Type, InnerParseError> {
+    if matches!(types, [Token::Double]) {
+        return sign
+            .is_none()
+            .then_some(Type::Double)
+            .ok_or_else(|| InnerParseError::InvalidTypeSpecifiers(types.to_vec()));
+    }
+
     match sign {
         Some(Token::Unsigned) => parse_unsigned_type(types),
         Some(Token::Signed) => parse_signed_type(types, true),
@@ -598,6 +605,11 @@ fn parse_factor(cursor: &mut Cursor) -> Result<Exp> {
         }
         Token::LConstant(i) => {
             let constant = Exp::constant(AstConst::Long(*i));
+            cursor.bump();
+            Ok(constant)
+        }
+        Token::FPDouble(f) => {
+            let constant = Exp::constant(AstConst::Double(*f));
             cursor.bump();
             Ok(constant)
         }

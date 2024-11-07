@@ -13,7 +13,7 @@ impl From<LinedToken> for Token {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Unsigned,
     Signed,
@@ -108,13 +108,14 @@ impl Token {
 
     #[inline]
     pub fn is_type_specifier(&self) -> bool {
-        matches!(self, Self::Int | Self::Long)
+        matches!(self, Self::Int | Self::Long | Self::Double)
     }
 
     #[inline]
     pub fn is_type(&self) -> bool {
         self.is_type_specifier() || self.is_sign_specifier()
     }
+
     #[inline]
     pub fn is_compound_assign(&self) -> bool {
         matches!(

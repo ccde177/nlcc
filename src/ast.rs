@@ -21,6 +21,7 @@ pub enum Type {
     Long,
     UInt,
     ULong,
+    Double,
     Fun {
         ptypes: Vec<Type>,
         return_type: Box<Type>,
@@ -255,14 +256,16 @@ pub enum UntypedExp {
     Constant(AstConst),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AstConst {
     Int(i32),
     Long(i64),
     UInt(u32),
     ULong(u64),
+    Double(f64),
 }
 
+#[cfg(feature = "semantic_analysis")]
 impl AstConst {
     pub fn is_negative(&self) -> bool {
         match self {
@@ -323,6 +326,7 @@ impl AstConst {
     }
 
     #[allow(clippy::cast_possible_truncation)]
+    #[cfg(feature = "semantic_analysis")]
     pub fn convert_to(&self, t: &Type) -> Self {
         let self_type = self.get_type();
         if t == &self_type {
@@ -350,6 +354,7 @@ impl AstConst {
     }
 }
 
+#[cfg(feature = "emission")]
 impl std::fmt::Display for AstConst {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -451,6 +456,7 @@ impl Type {
         }
     }
 
+    #[cfg(feature = "tacky")]
     pub fn get_size(&self) -> u64 {
         match self {
             Self::Int | Self::UInt => 4,
@@ -459,6 +465,7 @@ impl Type {
         }
     }
 
+    #[cfg(feature = "semantic_analysis")]
     pub fn get_common(t1: &Self, t2: &Self) -> Self {
         let t1_size = t1.get_size();
         let t2_size = t2.get_size();
