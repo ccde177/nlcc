@@ -95,11 +95,10 @@ fn lex_dfpconst_h(
 
     check_const_bad_suffix(cursor)?;
 
-    let f64_result = start[..count]
+    start[..count]
         .parse::<f64>()
-        .map_err(|_| InnerLexError::BadFloatingPointConstant(start[..count].to_owned()))?;
-
-    Ok(Token::FPDouble(f64_result))
+        .map_err(|_| InnerLexError::BadFloatingPointConstant(start[..count].to_owned()))
+        .map(Token::FPDouble)
 }
 
 fn lex_dfpconst(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
