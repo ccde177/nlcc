@@ -38,6 +38,16 @@ Options:
   * **Chapter 10** - File-scoped variable declarations, static variables, extern variables. Extern and static functions.
   * **Chapter 11** - Long type and long numeric constants (e.g. `100l`).
   * **Chapter 12** - Unsigned int and unsigned long types and correlating numeric constant types (e.g. `100u` and `100ul`).
+## Compilation stages
+1. **Preprocessing** - Driver uses gcc to preproccess input file and writes the result to file with .i extension.
+2. **Tokenization(lexing)** - [lex](lexer::lex) scans preprocessed file for known token types and produses [Tokens](lexer::Tokens) - a collection of [LinedToken](lexer::LinedToken) - a structure which contains token type and its position in preprocessed file. When unknown token met(e.g. `1@2`,  `wHile`, ..) it produces [LexError](lexer::LexError). Driver stops after this stage if --lex argument is provided.
+3. **Parsing** - [parse](parser::parse) takes a collection of tokens and produses [Ast](ast::Ast) - abstract syntax tree of input file. Any syntactic error(e.g. `int a = if`, ..) will raise [ParseError](parser::ParseError). Driver stops after this stage if  --parse argument is provided.
+4. **Validation** - [validate](semantic_analysis::validate) takes in [Ast](ast::Ast) and after number of checks and passes produces new [Ast](ast::Ast) where each [Exp](ast::Exp) has [Type](ast::Type) attached to it. This stage also checks that `goto` labels are in current function's scope, every variable has declaration, no conflicting redeclarations and provides [SYM_TABLE](semantic_analysis::SYM_TABLE) - global symbol table which contains every symbol's type information. Any kind of semantic error will produce [SemAnalysisError](semantic_analysis::SemAnalysisError). Driver stops after this stage if --validation argument is provided.
+5. **Tacky** - [emit_tacky](tacky::emit_tacky) takes typed [Ast](ast::Ast) and produces [Three-Address Code] intermidiate representation [TAst](tacky::TAst). From this stage on any error means bug in compiler and raises [panic!] instead of producing typed error. Driver stops after this stage if --tacky argument is provided.
+6. **Codegen** - [codegen] takes in [TAst](tacky::TAst) and produces assembly AST [AsmAst](codegen::AsmAst) - intremidiate representation of compiled compilation unit ready to be emited as an object file. Driver stops after this stage if --codegen argument is provided.
+7. **Emission** - [emission] module provides [Display] trait implementation for [AsmAst](codegen::AsmAst) which allows to [write!] it to any target. Driver emits assembly file with .s extension and stops if -S argument is provided.
+8. **Assembly** - Driver uses GNU Assembly to compile assembly file to object file with an .o extension. Stops if -c argument is provided.
+9. **Linkage** - Driver uses gcc linker to link object file and produce [ELF] executable.
 
 ## Versioning
 Starting from 0.12.0 following versioning rules are applied:
@@ -45,7 +55,12 @@ Starting from 0.12.0 following versioning rules are applied:
 
 [Writing a C Compiler]: https://nostarch.com/writing-c-compiler
 [std]: https://doc.rust-lang.org/std/
-
+[function declaration]: ast::FunDec
+[Three-Address Code]: https://en.wikipedia.org/wiki/Three-address_code
+[panic!]: https://doc.rust-lang.org/std/macro.panic.html
+[write!]: https://doc.rust-lang.org/std/macro.write.html
+[ELF]: https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
+[Display]: https://doc.rust-lang.org/std/fmt/trait.Display.html
 */
 
 #![deny(unused_must_use)]
