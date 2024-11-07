@@ -78,27 +78,18 @@ fn check_const_bad_suffix(cursor: &mut Cursor) -> Result<(), InnerLexError> {
     Ok(())
 }
 
-fn lex_dconstant_h(
+fn lex_dfpconst_h(
     cursor: &mut Cursor,
     start: &str,
     mut count: usize,
 ) -> Result<Token, InnerLexError> {
-    let mut met_e = false;
     let is_e = |c: char| matches!(c, 'e' | 'E');
     let is_sign = |c: char| matches!(c, '+' | '-');
     let predicate = |c: &char| matches!(c, '0'..='9' | '.') || is_e(*c);
 
     while let Some(peek) = cursor.peek().filter(predicate) {
-        let peek_is_e = is_e(peek);
-        if peek_is_e && met_e {
-            return Err(InnerLexError::BadFloatingPointConstant(
-                start[..count].to_owned(),
-            ));
-        }
         cursor.take();
-        let met_sign = peek_is_e && cursor.skip_if(is_sign);
-
-        met_e = peek_is_e;
+        let met_sign = is_e(peek) && cursor.skip_if(is_sign);
         count += 1 + usize::from(met_sign);
     }
 
@@ -111,10 +102,10 @@ fn lex_dconstant_h(
     Ok(Token::FPDouble(f64_result))
 }
 
-fn lex_dconstant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
+fn lex_dfpconst(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     let start = cursor.as_str();
     let count = 0;
-    lex_dconstant_h(cursor, start, count)
+    lex_dfpconst_h(cursor, start, count)
 }
 
 fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
@@ -128,7 +119,7 @@ fn lex_constant(cursor: &mut Cursor) -> Result<Token, InnerLexError> {
     let predicate = |c: &char| matches!(c, '.' | 'E' | 'e');
     let is_float = cursor.peek().filter(predicate).is_some();
     if is_float {
-        return lex_dconstant_h(cursor, start, count);
+        return lex_dfpconst_h(cursor, start, count);
     }
 
     let mut is_long = cursor.bump_if('l') || cursor.bump_if('L');
@@ -193,7 +184,7 @@ pub fn lex(input: &str) -> Result<Tokens, LexError> {
             }
             '_' | 'a'..='z' | 'A'..='Z' => Ok(lex_identifier(&mut cursor)),
             '0'..='9' => lex_constant(&mut cursor),
-            '.' => lex_dconstant(&mut cursor),
+            '.' => lex_dfpconst(&mut cursor),
             _ => Err(InnerLexError::UnexpectedChar(peek)),
         }
         .map(set_line)
