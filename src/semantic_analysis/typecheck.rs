@@ -107,12 +107,13 @@ pub enum InitValue {
     NoInit,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum StaticInit {
     Int(i32),
     Long(i64),
     UInt(u32),
     ULong(u64),
+    Double(f64),
 }
 
 impl StaticInit {
@@ -262,6 +263,12 @@ fn typecheck_assignment(e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Ex
 #[allow(clippy::unnecessary_map_on_constructor)]
 fn typecheck_unary(op: AstUnaryOp, exp: Exp, sym_table: &mut SymTable) -> Result<Exp> {
     let typechecked_inner = typecheck_exp(exp.into(), sym_table)?;
+    let inner_type = typechecked_inner
+        .get_type()
+        .expect("Should have type after type checking");
+    if matches!(op, AstUnaryOp::Complement) && matches!(inner_type, Type::Double) {
+        return Err(SemAnalysisError::ComplementOfFloat);
+    }
     let rtype = match op {
         AstUnaryOp::LogicalNot => Type::Int,
         _ => typechecked_inner
@@ -278,6 +285,10 @@ fn typecheck_binary(op: AstBinaryOp, e1: Exp, e2: Exp, sym_table: &mut SymTable)
     let e2 = typecheck_exp(e2.into(), sym_table)?;
     let t1 = e1.get_type().expect("Should have type after type checking");
     let t2 = e2.get_type().expect("Should have type after type checking");
+
+    if (op.is_bitwise() || op.is_mod()) && (t1.is_double() || t2.is_double()) {
+        return Err(SemAnalysisError::IllegalOperationOnFloat);
+    }
 
     let common_type = Type::get_common(&t1, &t2);
     let converted_e1 = convert_to(e1, common_type.clone());
@@ -321,13 +332,13 @@ fn typecheck_conditional(cond: ConditionalExp, sym_table: &mut SymTable) -> Resu
     Ok(Exp::conditional(cond).set_type(common_type))
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn typecheck_constant(constant: AstConst) -> Result<Exp> {
+fn typecheck_constant(constant: AstConst) -> Exp {
     match constant {
-        AstConst::Int(_) => Ok(Exp::constant(constant).set_type(Type::Int)),
-        AstConst::Long(_) => Ok(Exp::constant(constant).set_type(Type::Long)),
-        AstConst::UInt(_) => Ok(Exp::constant(constant).set_type(Type::UInt)),
-        AstConst::ULong(_) => Ok(Exp::constant(constant).set_type(Type::ULong)),
+        AstConst::Int(_) => Exp::constant(constant).set_type(Type::Int),
+        AstConst::Long(_) => Exp::constant(constant).set_type(Type::Long),
+        AstConst::UInt(_) => Exp::constant(constant).set_type(Type::UInt),
+        AstConst::ULong(_) => Exp::constant(constant).set_type(Type::ULong),
+        AstConst::Double(_) => Exp::constant(constant).set_type(Type::Double),
     }
 }
 
@@ -349,7 +360,7 @@ fn typecheck_exp(exp: UntypedExp, sym_table: &mut SymTable) -> Result<Exp> {
         UE::Conditional(cond) => typecheck_conditional(cond, sym_table),
         UE::Call(f, args) => typecheck_call(f, args, sym_table),
         UE::Var(name) => typecheck_var(name, sym_table),
-        UE::Constant(c) => typecheck_constant(c),
+        UE::Constant(c) => Ok(typecheck_constant(c)),
     }
 }
 
@@ -363,9 +374,15 @@ fn typecheck_logical(op: AstBinaryOp, src: Exp, dst: Exp, sym_table: &mut SymTab
 fn typecheck_shift(op: AstBinaryOp, src: Exp, dst: Exp, sym_table: &mut SymTable) -> Result<Exp> {
     let src = typecheck_exp(src.into(), sym_table).map(Box::new)?;
     let dst = typecheck_exp(dst.into(), sym_table).map(Box::new)?;
+    let src_is_double = src.get_type() == Some(Type::Double);
+    let dst_is_double = dst.get_type() == Some(Type::Double);
+    if src_is_double || dst_is_double {
+        return Err(SemAnalysisError::IllegalOperationOnFloat);
+    }
     let src_type = src
         .get_type()
         .expect("Should have type after type checking");
+
     let binary_exp = Exp::binary(op, src, dst);
     return Ok(binary_exp.set_type(src_type));
 }
@@ -429,6 +446,9 @@ fn convert_case(e: Exp, t: Type) -> Result<Exp> {
 }
 fn typecheck_cased_st(mut cased: CasedStatement, sym_table: &mut SymTable) -> Result<Statement> {
     cased.exp = typecheck_exp(cased.exp.into(), sym_table)?;
+    if let Some(Type::Double) = cased.exp.get_type() {
+        return Err(SemAnalysisError::NotAConstCase(cased.exp));
+    }
     let ctrl_type = CTRL_TYPE.read().expect("Should not be poisoned").clone();
     cased.exp = convert_case(cased.exp, ctrl_type)?;
     cased.body = typecheck_statement(*cased.body, sym_table).map(Box::new)?;
@@ -683,6 +703,7 @@ fn get_static_init(init: Exp, t: &Type) -> Result<InitValue> {
             AstConst::Long(i) => Ok(StaticInit::Long(i)),
             AstConst::UInt(u) => Ok(StaticInit::UInt(u)),
             AstConst::ULong(u) => Ok(StaticInit::ULong(u)),
+            AstConst::Double(f) => Ok(StaticInit::Double(f)),
         }
         .map(InitValue::Initial)
     } else {

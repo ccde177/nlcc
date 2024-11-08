@@ -108,6 +108,10 @@ fn get_case_const_init(exp: &UntypedExp) -> Result<AstConst> {
 fn label_cased(mut cased: CasedStatement, ng: &mut NameGenerator) -> Result<Statement> {
     let const_exp = get_case_const_init(&cased.exp)?;
 
+    if let Some(f) = const_exp.get_value_f64() {
+        return Err(SemAnalysisError::FloatCase(f));
+    }
+
     cased.label = ng
         .label_case(const_exp)
         .ok_or_else(|| SemAnalysisError::CaseNotInSwitch)?;

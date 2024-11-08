@@ -4,6 +4,7 @@ pub type Result<T> = std::result::Result<T, SemAnalysisError>;
 
 #[derive(Clone, Debug)]
 pub enum SemAnalysisError {
+    FloatCase(f64),
     IdentifierRedeclaration(Identifier),
     LocalFunDefinition(Identifier),
     VariableNotDeclared(Identifier),
@@ -28,11 +29,24 @@ pub enum SemAnalysisError {
     InitOnExternVar(String),
     StorageIdInForInit(String),
     StaticFunctionRedeclaredNonStatic(String),
+    ComplementOfFloat,
+    DoubleInReminder,
+    IllegalOperationOnFloat,
 }
 
 impl fmt::Display for SemAnalysisError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::IllegalOperationOnFloat => write!(f, "illegal operation on float argument"),
+            Self::DoubleInReminder => write!(
+                f,
+                "operand of floating point type is not allowed for reminder operation"
+            ),
+            Self::ComplementOfFloat => write!(
+                f,
+                "bitwise complement is not allowed on expressions of floating point type"
+            ),
+            Self::FloatCase(fl) => write!(f, "floating point constant {fl} in case"),
             Self::StaticFunctionRedeclaredNonStatic(name) => {
                 write!(f, "static function {name} redeclared ad non-static")
             }

@@ -39,6 +39,10 @@ fn collect_cased(cased_st: CasedStatement) -> Result<(Statement, Cases)> {
     let CasedStatement { exp, body, label } = cased_st;
     let u = get_case_const_init(&exp)?;
 
+    if let Some(f) = u.get_value_f64() {
+        return Err(SemAnalysisError::FloatCase(f));
+    }
+
     let (body, mut cases) = collect_statement(*body)?;
     let result_case = (Some(u), label.clone());
 

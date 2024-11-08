@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 pub type Identifier = String;
@@ -265,6 +266,20 @@ pub enum AstConst {
     Double(f64),
 }
 
+impl Eq for AstConst {}
+
+impl Hash for AstConst {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Int(i) => i.hash(state),
+            Self::UInt(u) => u.hash(state),
+            Self::Long(i) => i.hash(state),
+            Self::ULong(u) => u.hash(state),
+            Self::Double(f) => f.to_bits().hash(state),
+        }
+    }
+}
+
 #[cfg(feature = "semantic_analysis")]
 impl AstConst {
     pub fn is_negative(&self) -> bool {
@@ -272,6 +287,7 @@ impl AstConst {
             Self::Int(i) => *i < 0,
             Self::Long(l) => *l < 0,
             Self::UInt(_) | Self::ULong(_) => false,
+            Self::Double(f) => f.is_sign_negative(),
         }
     }
 
@@ -279,11 +295,13 @@ impl AstConst {
         match self {
             Self::Int(i) => Self::Int(i32::abs(*i)),
             Self::Long(l) => Self::Long(i64::abs(*l)),
+            Self::Double(f) => Self::Double(f.abs()),
             Self::UInt(_) | Self::ULong(_) => *self,
         }
     }
 
     #[allow(clippy::cast_possible_truncation)]
+    #[cfg(feature = "tacky")]
     pub fn new_signed(t: &Type, v: i64) -> Option<Self> {
         match t {
             Type::Int => Some(AstConst::Int(v as i32)),
@@ -292,6 +310,7 @@ impl AstConst {
         }
     }
 
+    #[cfg(feature = "tacky")]
     pub fn new_unsigned(t: &Type, v: u64) -> Option<Self> {
         match t {
             Type::UInt => Some(AstConst::UInt(v as u32)),
@@ -306,14 +325,15 @@ impl AstConst {
             Self::Long(_) => Type::Long,
             Self::ULong(_) => Type::ULong,
             Self::UInt(_) => Type::UInt,
+            Self::Double(_) => Type::Double,
         }
     }
 
-    fn get_value_i64(&self) -> Option<i64> {
+    pub fn get_value_i64(&self) -> Option<i64> {
         match self {
             Self::Int(i) => Some(i64::from(*i)),
             Self::Long(i) => Some(*i),
-            Self::UInt(_) | Self::ULong(_) => None,
+            Self::UInt(_) | Self::ULong(_) | Self::Double(_) => None,
         }
     }
 
@@ -321,7 +341,15 @@ impl AstConst {
         match self {
             Self::UInt(u) => Some(u64::from(*u)),
             Self::ULong(u) => Some(*u),
-            Self::Int(_) | Self::Long(_) => None,
+            Self::Int(_) | Self::Long(_) | Self::Double(_) => None,
+        }
+    }
+
+    pub fn get_value_f64(&self) -> Option<f64> {
+        if let Self::Double(f) = self {
+            Some(*f)
+        } else {
+            None
         }
     }
 
@@ -332,6 +360,16 @@ impl AstConst {
         if t == &self_type {
             return *self;
         }
+        if let Some(f) = self.get_value_f64() {
+            let result = match t {
+                Type::Int => AstConst::Int(f.trunc() as i32),
+                Type::UInt => AstConst::UInt(f.trunc() as u32),
+                Type::Long => AstConst::Long(f.trunc() as i64),
+                Type::ULong => AstConst::ULong(f.trunc() as u64),
+                Type::Fun { .. } | Type::Double => *self,
+            };
+            return result;
+        }
         if self_type.is_signed() {
             let value = self.get_value_i64().unwrap();
             match t {
@@ -339,6 +377,7 @@ impl AstConst {
                 Type::UInt => AstConst::UInt(value as u32),
                 Type::ULong => AstConst::ULong(value as u64),
                 Type::Long => AstConst::Long(value),
+                Type::Double => AstConst::Double(value as f64),
                 Type::Fun { .. } => *self,
             }
         } else {
@@ -348,13 +387,15 @@ impl AstConst {
                 Type::UInt => AstConst::UInt(value as u32),
                 Type::Long => AstConst::Long(value as i64),
                 Type::ULong => AstConst::ULong(value as u64),
+                Type::Double => AstConst::Double(value as f64),
                 Type::Fun { .. } => *self,
             }
         }
     }
 }
 
-#[cfg(feature = "emission")]
+//This one is required for switch cases labeling
+#[cfg(feature = "semantic_analysis")]
 impl std::fmt::Display for AstConst {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -362,6 +403,7 @@ impl std::fmt::Display for AstConst {
             AstConst::Long(i) => write!(f, "{i}"),
             AstConst::ULong(u) => write!(f, "{u}"),
             AstConst::UInt(u) => write!(f, "{u}"),
+            AstConst::Double(f) => panic!("Attempt to label floating point case {f}"),
         }
     }
 }
@@ -423,6 +465,12 @@ impl AstBinaryOp {
     pub fn is_logical(&self) -> bool {
         matches!(self, Self::LogicalAnd | Self::LogicalOr)
     }
+    pub fn is_bitwise(&self) -> bool {
+        matches!(self, Self::BitwiseAnd | Self::BitwiseOr | Self::BitwiseXor)
+    }
+    pub fn is_mod(&self) -> bool {
+        matches!(self, Self::Mod)
+    }
     pub fn is_eq(&self) -> bool {
         matches!(
             self,
@@ -456,17 +504,18 @@ impl Type {
         }
     }
 
-    #[cfg(feature = "tacky")]
     pub fn get_size(&self) -> u64 {
         match self {
             Self::Int | Self::UInt => 4,
-            Self::Long | Self::ULong => 8,
+            Self::Long | Self::ULong | Self::Double => 8,
             Self::Fun { .. } => panic!("Attempt to get size of function type"),
         }
     }
 
-    #[cfg(feature = "semantic_analysis")]
     pub fn get_common(t1: &Self, t2: &Self) -> Self {
+        if t1.is_double() || t2.is_double() {
+            return Self::Double;
+        }
         let t1_size = t1.get_size();
         let t2_size = t2.get_size();
         if t1 == t2 {
@@ -482,6 +531,11 @@ impl Type {
         } else {
             t2.clone()
         }
+    }
+
+    #[inline]
+    pub fn is_double(&self) -> bool {
+        matches!(self, Self::Double)
     }
 
     #[inline]
