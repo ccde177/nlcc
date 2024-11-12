@@ -32,6 +32,10 @@ pub enum TopLevelItem {
 
 #[derive(Clone, Debug)]
 pub enum TInstruction {
+    UIntToDouble(TValue, TValue),
+    IntToDouble(TValue, TValue),
+    DoubleToUInt(TValue, TValue),
+    DoubleToInt(TValue, TValue),
     Truncate(TValue, TValue),   //(src, dst)
     SignExtend(TValue, TValue), // (src,dst)
     ZeroExtend(TValue, TValue),

@@ -53,7 +53,11 @@ fn fix_two_memoperands(instruction: AsmInstruction) -> AsmInstructions {
         else {
             unreachable!()
         };
-        let temp_reg = Register::R10;
+        let temp_reg = if t.is_double() {
+            Register::XMM14
+        } else {
+            Register::R10
+        };
         let mov1 = AsmInstruction::Mov(t, src.clone(), Operand::Reg(temp_reg));
         let snd = match instruction {
             AsmInstruction::Binary(t, op, _, _) => {
@@ -162,7 +166,7 @@ fn fix_with_fixer(
     }
 }
 
-pub fn fix_zero_extend(instruction: AsmInstruction) -> AsmInstructions {
+fn fix_zero_extend(instruction: AsmInstruction) -> AsmInstructions {
     use AsmInstruction as I;
     let mut result = AsmInstructions::new();
     if let I::MovZX(src, dst) = instruction {
@@ -180,20 +184,88 @@ pub fn fix_zero_extend(instruction: AsmInstruction) -> AsmInstructions {
             }
             _ => (),
         }
+    } else {
+        panic!("internal error: bad fix predicate for fix_zero_extend");
     }
     result
 }
 
-pub fn fix_instructions(instructions: &mut AsmInstructions) {
+fn fix_cvttsd2si(instruction: AsmInstruction) -> AsmInstructions {
     use AsmInstruction as I;
-    fix_with_fixer(instructions, I::is_mul_sndmem, fix_imul);
-    fix_with_fixer(instructions, I::is_idiv_constant, fix_idiv);
-    fix_with_fixer(instructions, I::is_div_constant, fix_div);
-    fix_with_fixer(instructions, I::is_movsx_invalid, fix_movsx);
-    fix_with_fixer(instructions, I::mem_operands, fix_two_memoperands);
-    fix_with_fixer(instructions, I::is_cmp_sndimm, fix_cmp_sndimm);
-    fix_with_fixer(instructions, I::is_mov_immtoobig, fix_mov_imm);
-    fix_with_fixer(instructions, I::is_imm_toobig, fix_imm_toobig);
-    fix_with_fixer(instructions, I::is_truncate_imm_toobig, fix_truncate);
-    fix_with_fixer(instructions, I::is_zero_extend, fix_zero_extend);
+    let mut result = AsmInstructions::new();
+    if let I::Cvttsd2si(t, src, dst) = instruction {
+        assemble!(result {
+            cvttsd2si t, src, %r11;
+            mov t, %r11, dst;
+        });
+    } else {
+        panic!("internal error: bad fix predicate for fix_cvttsd2si");
+    }
+    result
+}
+
+fn fix_cvtsi2sd(instruction: AsmInstruction) -> AsmInstructions {
+    use AsmInstruction as I;
+    let mut result = AsmInstructions::new();
+    if let I::Cvtsi2sd(t, src, dst) = instruction {
+        assemble!(result {
+            mov t, src, %r10;
+            cvtsi2sd t, %r10, %xmm15;
+            movsd %xmm15, dst;
+        });
+    } else {
+        panic!("internal error: bad fix predicate for fix_cvtsi2sd");
+    }
+    result
+}
+
+fn fix_comisd(instruction: AsmInstruction) -> AsmInstructions {
+    use AsmInstruction as I;
+    let mut result = AsmInstructions::new();
+    if let I::Cmp(AsmType::Double, src, dst) = instruction {
+        assemble!(result {
+            movsd dst, %xmm15;
+            comisd src, %xmm15;
+        });
+    } else {
+        panic!("internal error: bad fix predicate for fix_comisd");
+    }
+    result
+}
+
+fn fix_binary_double(instruction: AsmInstruction) -> AsmInstructions {
+    use AsmInstruction as I;
+    let mut result = AsmInstructions::new();
+    if let I::Binary(AsmType::Double, op, src, dst) = instruction {
+        assemble!(result {
+            movsd dst, %xmm15;
+        });
+        let binary =
+            AsmInstruction::Binary(AsmType::Double, op, src, Operand::Reg(Register::XMM15));
+        result.push(binary);
+        assemble!(result {
+            movsd %xmm15, dst;
+        });
+    } else {
+        panic!("internal error: bad fix predicate for fix_binary_double");
+    }
+    result
+}
+
+pub fn fix_instructions(instrs: &mut AsmInstructions) {
+    use AsmInstruction as I;
+    fix_with_fixer(instrs, I::is_mul_sndmem, fix_imul);
+    fix_with_fixer(instrs, I::is_idiv_constant, fix_idiv);
+    fix_with_fixer(instrs, I::is_div_constant, fix_div);
+    fix_with_fixer(instrs, I::is_movsx_invalid, fix_movsx);
+    fix_with_fixer(instrs, I::mem_operands, fix_two_memoperands);
+    fix_with_fixer(instrs, I::is_cmp_sndimm, fix_cmp_sndimm);
+    fix_with_fixer(instrs, I::is_mov_immtoobig, fix_mov_imm);
+    fix_with_fixer(instrs, I::is_imm_toobig, fix_imm_toobig);
+    fix_with_fixer(instrs, I::is_truncate_imm_toobig, fix_truncate);
+    fix_with_fixer(instrs, I::is_zero_extend, fix_zero_extend);
+    fix_with_fixer(instrs, I::cvttsd2si_dst_not_reg, fix_cvttsd2si);
+    fix_with_fixer(instrs, I::cvtsi2sd_needs_fix, fix_cvtsi2sd);
+    fix_with_fixer(instrs, I::comisd_dst_not_reg, fix_comisd);
+    fix_with_fixer(instrs, I::binary_double_dst_not_reg, fix_binary_double);
 }

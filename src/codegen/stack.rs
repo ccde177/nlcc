@@ -1,6 +1,6 @@
 use crate::ast::Identifier;
 use crate::codegen::ASM_SYM_TABLE;
-use crate::codegen::{AsmInstruction, AsmInstructions, AsmType, BinaryOp, Operand, Register};
+use crate::codegen::{AsmBinaryOp, AsmInstruction, AsmInstructions, AsmType, Operand, Register};
 use std::collections::HashMap;
 
 pub fn allocate_stack(instructions: &mut AsmInstructions) {
@@ -15,7 +15,9 @@ pub fn allocate_stack(instructions: &mut AsmInstructions) {
             | I::Div(_, operand) => {
                 *operand = sa.allocate_if_pseudo(operand.clone());
             }
-            I::Cmp(_, src, dst)
+            I::Cvtsi2sd(_, src, dst)
+            | I::Cvttsd2si(_, src, dst)
+            | I::Cmp(_, src, dst)
             | I::MovZX(src, dst)
             | I::Mov(_, src, dst)
             | I::Binary(_, _, src, dst)
@@ -74,10 +76,10 @@ impl StackAllocator {
     #[allow(clippy::cast_sign_loss)]
     fn get_prologue(&self) -> AsmInstruction {
         let stack_size = self.offset + (16 - (self.offset % 16));
-        let sp = Operand::Reg(Register::Sp);
+        let sp = Operand::Reg(Register::SP);
         AsmInstruction::Binary(
             AsmType::Quadword,
-            BinaryOp::Sub,
+            AsmBinaryOp::Sub,
             Operand::Imm(stack_size as i128),
             sp,
         )

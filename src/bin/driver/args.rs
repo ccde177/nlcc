@@ -25,6 +25,9 @@ pub struct Args {
     #[cfg(feature = "emission")]
     pub no_assemble: bool,
 
+    #[cfg(feature = "emission")]
+    pub link_options: Vec<String>,
+
     pub input: PathBuf,
 }
 
@@ -36,6 +39,10 @@ impl Args {
 
         for arg in env_args.skip(1) {
             match arg.as_str() {
+                #[cfg(feature = "emission")]
+                s if s.starts_with("-l") => {
+                    args.link_options.push(s.to_string());
+                }
                 #[cfg(feature = "emission")]
                 "-c" | "--no-link" => args.no_link = true,
                 #[cfg(feature = "emission")]
@@ -82,6 +89,8 @@ impl Args {
             "      --codegen          Stop after code generation\n",
             #[cfg(feature = "emission")]
             " -c, --no-link           Compile and assemble, but do not link\n",
+            #[cfg(feature = "emission")]
+            "-l<lib>                  Link with <lib>",
             #[cfg(feature = "emission")]
             "                         (Output object file)\n",
             #[cfg(feature = "emission")]

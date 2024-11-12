@@ -8,6 +8,7 @@ use std::sync::RwLock;
 
 // Global symbol table
 pub static SYM_TABLE: GlobalSymTable = GlobalSymTable::new();
+#[derive(Debug)]
 pub struct GlobalSymTable {
     inner: OnceLock<RwLock<SymTable>>,
 }
@@ -116,12 +117,28 @@ pub enum StaticInit {
     Double(f64),
 }
 
+impl From<AstConst> for StaticInit {
+    fn from(value: AstConst) -> Self {
+        use AstConst as C;
+        match value {
+            C::Int(i) => Self::Int(i),
+            C::UInt(u) => Self::UInt(u),
+            C::Long(i) => Self::Long(i),
+            C::ULong(u) => Self::ULong(u),
+            C::Double(f) => Self::Double(f),
+        }
+    }
+}
+
 impl StaticInit {
     pub fn is_zero(&self) -> bool {
         matches!(
             self,
             Self::Int(0) | Self::Long(0) | Self::UInt(0) | Self::ULong(0)
         )
+    }
+    pub fn is_double(&self) -> bool {
+        matches!(&self, Self::Double(_))
     }
 
     pub fn is_long(&self) -> bool {
@@ -260,7 +277,6 @@ fn typecheck_assignment(e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Ex
     Ok(assign)
 }
 
-#[allow(clippy::unnecessary_map_on_constructor)]
 fn typecheck_unary(op: AstUnaryOp, exp: Exp, sym_table: &mut SymTable) -> Result<Exp> {
     let typechecked_inner = typecheck_exp(exp.into(), sym_table)?;
     let inner_type = typechecked_inner
@@ -269,15 +285,19 @@ fn typecheck_unary(op: AstUnaryOp, exp: Exp, sym_table: &mut SymTable) -> Result
     if matches!(op, AstUnaryOp::Complement) && matches!(inner_type, Type::Double) {
         return Err(SemAnalysisError::ComplementOfFloat);
     }
-    let rtype = match op {
-        AstUnaryOp::LogicalNot => Type::Int,
-        _ => typechecked_inner
+    let is_not = matches!(op, AstUnaryOp::LogicalNot);
+
+    let rtype = if is_not {
+        Type::Int
+    } else {
+        typechecked_inner
             .get_type()
-            .expect("Should always have type"),
+            .expect("Should always have type")
     };
-    Ok(typechecked_inner)
-        .map(Box::new)
-        .map(|exp| Exp::unary(op, exp).set_type(rtype))
+
+    let typechecked_inner = Box::new(typechecked_inner);
+    let result = Exp::unary(op, typechecked_inner).set_type(rtype);
+    Ok(result)
 }
 
 fn typecheck_binary(op: AstBinaryOp, e1: Exp, e2: Exp, sym_table: &mut SymTable) -> Result<Exp> {
@@ -393,6 +413,7 @@ fn typecheck_return(e: Exp, sym_table: &mut SymTable) -> Result<Statement> {
         .read()
         .expect("Should not be poisoned")
         .clone();
+    println!("Converting {typechecked_inner:?} to {current_type:?}");
     let converted = convert_to(typechecked_inner, current_type);
     Ok(Statement::Return(converted))
 }

@@ -16,7 +16,7 @@ name = "nlcc"
 path = "src/bin/driver/main.rs"
 
 [features]
-default = ["semantic_analysis"]
+default = ["emission"]
 lexer = []
 parser = ["lexer"]
 semantic_analysis = ["parser"]

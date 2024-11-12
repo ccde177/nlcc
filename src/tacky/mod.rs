@@ -64,9 +64,14 @@ fn emit_unary(op: AstUnaryOp, exp: Exp, instructions: &mut TInstructions) -> TVa
     let t = exp
         .get_type()
         .expect("Should have type after type checking");
+    let is_not = matches!(op, AstUnaryOp::LogicalNot);
     let tacky_op = TUnaryOp::from(op);
     let src = emit_expression(exp, instructions);
-    let dst = new_tacky_var(t);
+    let dst = if is_not {
+        new_tacky_var(Type::Int)
+    } else {
+        new_tacky_var(t)
+    };
     let tacky_instruction = TInstruction::Unary(tacky_op, src, dst.clone());
     instructions.push(tacky_instruction);
     dst
@@ -219,11 +224,25 @@ fn emit_cast(t: &Type, e: Exp, instructions: &mut TInstructions) -> TValue {
     if t == &inner_type {
         return result;
     }
+
     let dst = new_tacky_var(t.clone());
 
     let t_size = t.get_size();
     let inner_t_size = inner_type.get_size();
-    let cast_instr = if t_size == inner_t_size {
+
+    let cast_instr = if t.is_double() {
+        if inner_type.is_signed() {
+            TInstruction::IntToDouble(result, dst.clone())
+        } else {
+            TInstruction::UIntToDouble(result, dst.clone())
+        }
+    } else if inner_type.is_double() {
+        if t.is_signed() {
+            TInstruction::DoubleToInt(result, dst.clone())
+        } else {
+            TInstruction::DoubleToUInt(result, dst.clone())
+        }
+    } else if t_size == inner_t_size {
         TInstruction::Copy(result, dst.clone())
     } else if t_size < inner_t_size {
         TInstruction::Truncate(result, dst.clone())
@@ -544,6 +563,7 @@ fn emit_static_symbols() -> Vec<TopLevelItem> {
                 Type::UInt => StaticInit::UInt(0),
                 Type::Long => StaticInit::Long(0),
                 Type::ULong => StaticInit::ULong(0),
+                Type::Double => StaticInit::Double(0.),
                 Type::Fun { .. } => continue,
             };
             let init = init.get_static_init().unwrap_or(tentative_init);

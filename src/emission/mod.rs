@@ -3,27 +3,31 @@ use crate::semantic_analysis::StaticInit;
 
 use std::fmt;
 
-impl fmt::Display for UnaryOp {
+impl fmt::Display for AsmUnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Neg => write!(f, "neg"),
             Self::Not => write!(f, "not"),
+            Self::Sal => write!(f, "sal"),
+            Self::Shr => write!(f, "shr"),
+            Self::Sar => write!(f, "sar"),
         }
     }
 }
 
-impl fmt::Display for BinaryOp {
+impl fmt::Display for AsmBinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            BinaryOp::Shr => write!(f, "shr"),
-            BinaryOp::Add => write!(f, "add"),
-            BinaryOp::Sub => write!(f, "sub"),
-            BinaryOp::Imul => write!(f, "imul"),
-            BinaryOp::And => write!(f, "and"),
-            BinaryOp::Or => write!(f, "or"),
-            BinaryOp::Xor => write!(f, "xor"),
-            BinaryOp::Sal => write!(f, "sal"),
-            BinaryOp::Sar => write!(f, "sar"),
+            Self::Shr => write!(f, "shr"),
+            Self::Add => write!(f, "add"),
+            Self::Sub => write!(f, "sub"),
+            Self::Imul => write!(f, "imul"),
+            Self::And => write!(f, "and"),
+            Self::Or => write!(f, "or"),
+            Self::Xor => write!(f, "xor"),
+            Self::Sal => write!(f, "sal"),
+            Self::Sar => write!(f, "sar"),
+            Self::DivDouble => write!(f, "div"),
         }
     }
 }
@@ -54,6 +58,7 @@ impl fmt::Display for StaticInit {
             Self::Long(i) => write!(f, "{i}"),
             Self::UInt(u) => write!(f, "{u}"),
             Self::ULong(u) => write!(f, "{u}"),
+            Self::Double(fl) => write!(f, "{}", fl.to_bits()),
         }
     }
 }
@@ -66,13 +71,17 @@ impl fmt::Display for AsmStaticVar {
             init,
             alignment,
         } = self;
-        let (section, init) = if init.is_zero() {
+        let (section, init) = if init.is_zero() && !init.is_double() {
             let bss = String::from(".bss");
             let zero = format!(".zero {alignment}");
             (bss, zero)
         } else {
             let data = String::from(".data");
-            let prefix = if init.is_long() { ".quad" } else { ".long" };
+            let prefix = if init.is_long() || init.is_double() {
+                ".quad"
+            } else {
+                ".long"
+            };
             let init = format!("{prefix} {init}");
             (data, init)
         };
@@ -86,11 +95,26 @@ impl fmt::Display for AsmStaticVar {
     }
 }
 
+impl fmt::Display for AsmStaticConst {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            name,
+            alignment,
+            init,
+        } = self;
+        writeln!(f, "\t.section .rodata")?;
+        writeln!(f, "\t.align {alignment}")?;
+        writeln!(f, ".L{name}:")?;
+        writeln!(f, "\t.quad {init}")
+    }
+}
+
 impl fmt::Display for AsmTopLevelItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Fun(fun) => write!(f, "{fun}"),
             Self::StaticVar(staticvar) => write!(f, "{staticvar}"),
+            Self::StaticConst(static_const) => write!(f, "{static_const}"),
         }
     }
 }
@@ -126,54 +150,83 @@ impl fmt::Display for AsmType {
         match self {
             Self::Longword => write!(f, "l"),
             Self::Quadword => write!(f, "q"),
+            Self::Double => write!(f, "sd"),
         }
     }
 }
 
-fn display_quadword_reg(r: Register) -> String {
+fn display_quadword_reg(r: Register) -> &'static str {
     match r {
-        Register::Ax => "%rax",
-        Register::Cx => "%rcx",
-        Register::Dx => "%rdx",
-        Register::Di => "%rdi",
-        Register::Si => "%rsi",
+        Register::AX => "%rax",
+        Register::CX => "%rcx",
+        Register::DX => "%rdx",
+        Register::DI => "%rdi",
+        Register::SI => "%rsi",
         Register::R8 => "%r8",
         Register::R9 => "%r9",
         Register::R10 => "%r10",
         Register::R11 => "%r11",
-        Register::Sp => "%rsp",
+        Register::SP => "%rsp",
+        _ => display_xmm(r),
     }
-    .into()
 }
-fn display_longword_reg(r: Register) -> String {
+fn display_longword_reg(r: Register) -> &'static str {
     match r {
-        Register::Ax => "%eax",
-        Register::Cx => "%ecx",
-        Register::Dx => "%edx",
+        Register::AX => "%eax",
+        Register::CX => "%ecx",
+        Register::DX => "%edx",
         Register::R10 => "%r10d",
         Register::R11 => "%r11d",
         Register::R8 => "%r8d",
         Register::R9 => "%r9d",
-        Register::Si => "%esi",
-        Register::Di => "%edi",
-        Register::Sp => "%rsp",
+        Register::SI => "%esi",
+        Register::DI => "%edi",
+        Register::SP => "%esp",
+        _ => display_xmm(r),
     }
     .into()
 }
 
-fn display_reg(r: Register, t: AsmType) -> String {
+fn display_xmm(r: Register) -> &'static str {
+    match r {
+        Register::XMM0 => "%xmm0",
+        Register::XMM1 => "%xmm1",
+        Register::XMM2 => "%xmm2",
+        Register::XMM3 => "%xmm3",
+        Register::XMM4 => "%xmm4",
+        Register::XMM5 => "%xmm5",
+        Register::XMM6 => "%xmm6",
+        Register::XMM7 => "%xmm7",
+        Register::XMM14 => "%xmm14",
+        Register::XMM15 => "%xmm15",
+        _ => {
+            panic!("internal error: attempt to display non floating register {r:?} in floating operation")
+        }
+    }
+}
+
+fn display_reg(r: Register, t: AsmType) -> &'static str {
     match t {
         AsmType::Longword => display_longword_reg(r),
         AsmType::Quadword => display_quadword_reg(r),
+        AsmType::Double => display_xmm(r),
     }
 }
 
 fn display_operand(op: &Operand, t: AsmType) -> String {
     match op {
-        Operand::Reg(r) => display_reg(*r, t),
+        Operand::Data(name) => {
+            let prefix = ASM_SYM_TABLE
+                .get_sym(name)
+                .filter(AsmSymTabEntry::is_const)
+                .is_some()
+                .then_some(".L")
+                .unwrap_or("");
+            format!("{prefix}{name}(%rip)")
+        }
+        Operand::Reg(r) => display_reg(*r, t).to_string(),
         Operand::Imm(i) => format!("${i}"),
         Operand::Stack(i) => format!("{i}(%rbp)"),
-        Operand::Data(name) => format!("{name}(%rip)"),
         Operand::Pseudo(name) => panic!("pseudo operand {name} after codegen"),
     }
 }
@@ -208,11 +261,22 @@ impl fmt::Display for AsmInstruction {
                     write!(f, "cqo")
                 }
             }
-            Self::Binary(t, BinaryOp::Sal, Operand::Reg(Register::Cx), dst) => {
+            Self::Binary(AsmType::Double, AsmBinaryOp::Imul, src, dst) => {
+                let src_str = display_operand(src, AsmType::Double);
+                let dst_str = display_operand(dst, AsmType::Double);
+
+                write!(f, "mulsd {src_str}, {dst_str}")
+            }
+            Self::Binary(AsmType::Double, AsmBinaryOp::Xor, src, dst) => {
+                let src_str = display_operand(src, AsmType::Double);
+                let dst_str = display_operand(dst, AsmType::Double);
+                write!(f, "xorpd {src_str}, {dst_str}")
+            }
+            Self::Binary(t, AsmBinaryOp::Sal, Operand::Reg(Register::CX), dst) => {
                 let dst_str = display_operand(dst, *t);
                 write!(f, "sal{t} %cl, {dst_str}")
             }
-            Self::Binary(t, BinaryOp::Sar, Operand::Reg(Register::Cx), dst) => {
+            Self::Binary(t, AsmBinaryOp::Sar, Operand::Reg(Register::CX), dst) => {
                 let dst_str = display_operand(dst, *t);
                 write!(f, "sar{t} %cl, {dst_str}")
             }
@@ -220,6 +284,11 @@ impl fmt::Display for AsmInstruction {
                 let src_str = display_operand(src, *t);
                 let dst_str = display_operand(dst, *t);
                 write!(f, "{op}{t} {src_str}, {dst_str}")
+            }
+            Self::Cmp(AsmType::Double, src, dst) => {
+                let src_str = display_operand(src, AsmType::Double);
+                let dst_str = display_operand(dst, AsmType::Double);
+                write!(f, "comisd {src_str}, {dst_str}")
             }
             Self::Cmp(t, src, dst) => {
                 let src_str = display_operand(src, *t);
@@ -240,16 +309,17 @@ impl fmt::Display for AsmInstruction {
                         unreachable!()
                     };
                     let reg_str = match reg {
-                        Register::Ax => "al",
-                        Register::Dx => "dl",
+                        Register::AX => "al",
+                        Register::DX => "dl",
                         Register::R8 => "r8b",
                         Register::R10 => "r10b",
                         Register::R11 => "r11b",
-                        Register::Cx => "cl",
-                        Register::Di => "dil",
-                        Register::Si => "sil",
+                        Register::CX => "cl",
+                        Register::DI => "dil",
+                        Register::SI => "sil",
                         Register::R9 => "r9b",
-                        Register::Sp => "sp",
+                        Register::SP => "sp",
+                        _ => display_xmm(*reg),
                     };
                     write!(f, "set{cond_code} {reg_str}")
                 } else {
@@ -258,7 +328,17 @@ impl fmt::Display for AsmInstruction {
                 }
             }
             Self::MovZX(_, _) => {
-                panic!("Should be replaced during fix-up stage");
+                panic!("internal error: movzx in code emission");
+            }
+            Self::Cvtsi2sd(t, src, dst) => {
+                let src_str = display_operand(src, *t);
+                let dst_str = display_operand(dst, *t);
+                write!(f, "cvtsi2sd{t} {src_str}, {dst_str}")
+            }
+            Self::Cvttsd2si(t, src, dst) => {
+                let src_str = display_operand(src, *t);
+                let dst_str = display_operand(dst, *t);
+                write!(f, "cvttsd2si{t} {src_str}, {dst_str}")
             }
         }
     }

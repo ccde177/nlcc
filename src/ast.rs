@@ -282,6 +282,16 @@ impl Hash for AstConst {
 
 #[cfg(feature = "semantic_analysis")]
 impl AstConst {
+    #[cfg(feature = "codegen")]
+    pub fn get_align(&self) -> usize {
+        match self {
+            Self::Int(_) | Self::UInt(_) => 4,
+            Self::Long(_) | Self::ULong(_) => 8,
+            // Double check signum because -0. == 0.
+            Self::Double(f @ -0.) if f.signum() == -1.0 => 16,
+            Self::Double(_) => 8,
+        }
+    }
     pub fn is_negative(&self) -> bool {
         match self {
             Self::Int(i) => *i < 0,
@@ -297,25 +307,6 @@ impl AstConst {
             Self::Long(l) => Self::Long(i64::abs(*l)),
             Self::Double(f) => Self::Double(f.abs()),
             Self::UInt(_) | Self::ULong(_) => *self,
-        }
-    }
-
-    #[allow(clippy::cast_possible_truncation)]
-    #[cfg(feature = "tacky")]
-    pub fn new_signed(t: &Type, v: i64) -> Option<Self> {
-        match t {
-            Type::Int => Some(AstConst::Int(v as i32)),
-            Type::Long => Some(AstConst::Long(v)),
-            Type::Fun { .. } | Type::ULong | Type::UInt => None,
-        }
-    }
-
-    #[cfg(feature = "tacky")]
-    pub fn new_unsigned(t: &Type, v: u64) -> Option<Self> {
-        match t {
-            Type::UInt => Some(AstConst::UInt(v as u32)),
-            Type::ULong => Some(AstConst::ULong(v)),
-            Type::Fun { .. } | Type::Long | Type::Int => None,
         }
     }
 
@@ -540,11 +531,13 @@ impl Type {
 
     #[inline]
     pub fn is_signed(&self) -> bool {
+        // Do not add double
         matches!(self, Self::Int | Self::Long)
     }
 
     #[inline]
     pub fn is_unsigned(&self) -> bool {
+        // Do not add double
         matches!(self, Self::UInt | Self::ULong)
     }
 }

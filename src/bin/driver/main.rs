@@ -60,6 +60,7 @@ fn validate(ast: ast::Ast, args: &Args) -> Result<Ast> {
     let validated_ast = semantic_analysis::validate(ast)?;
     if args.validate {
         dbg!(&validated_ast);
+        dbg!(&semantic_analysis::SYM_TABLE);
         exit(0)
     }
     Ok(validated_ast)
@@ -70,6 +71,7 @@ fn gen_tacky(ast: ast::Ast, args: &Args) -> tacky::TAst {
     let tacky = tacky::emit_tacky(ast);
     if args.tacky {
         dbg!(&tacky);
+        dbg!(&semantic_analysis::SYM_TABLE);
         exit(0);
     }
     tacky
@@ -106,6 +108,7 @@ fn emit_asm(asm_ast: codegen::AsmAst, args: &Args) -> Result<()> {
         .arg(c_arg)
         .arg("-o")
         .arg(&out_file)
+        .args(&args.link_options)
         .status()?;
 
     if !status.success() {

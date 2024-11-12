@@ -1,3 +1,4 @@
+use super::gen::CONST_TABLE;
 use crate::ast::{AstConst, Identifier};
 use crate::semantic_analysis::StaticInit;
 use crate::tacky::{StaticVariable, TBinaryOp, TUnaryOp, TValue};
@@ -13,12 +14,36 @@ pub type AsmInstructions = Vec<AsmInstruction>;
 pub enum AsmType {
     Longword,
     Quadword,
+    Double,
+}
+
+impl AsmType {
+    #[inline]
+    pub fn is_double(&self) -> bool {
+        matches!(self, Self::Double)
+    }
+    #[inline]
+    pub fn is_quadword(&self) -> bool {
+        matches!(self, Self::Quadword)
+    }
+    #[inline]
+    pub fn is_longword(&self) -> bool {
+        matches!(self, Self::Longword)
+    }
 }
 
 #[derive(Debug)]
 pub enum AsmTopLevelItem {
     Fun(AsmFunction),
     StaticVar(AsmStaticVar),
+    StaticConst(AsmStaticConst),
+}
+
+#[derive(Debug)]
+pub struct AsmStaticConst {
+    pub name: Identifier,
+    pub alignment: usize,
+    pub init: StaticInit,
 }
 
 #[derive(Debug)]
@@ -26,7 +51,7 @@ pub struct AsmStaticVar {
     pub name: Identifier,
     pub global: bool,
     pub init: StaticInit,
-    pub alignment: i32,
+    pub alignment: usize,
 }
 
 #[derive(Debug)]
@@ -38,13 +63,15 @@ pub struct AsmFunction {
 
 #[derive(Debug, Clone)]
 pub enum AsmInstruction {
+    Cvttsd2si(AsmType, Operand, Operand),
+    Cvtsi2sd(AsmType, Operand, Operand),
     Call(Identifier),
     Push(Operand),
     Mov(AsmType, Operand, Operand),
     Movsx(Operand, Operand),
     MovZX(Operand, Operand),
-    Unary(AsmType, UnaryOp, Operand),
-    Binary(AsmType, BinaryOp, Operand, Operand),
+    Unary(AsmType, AsmUnaryOp, Operand),
+    Binary(AsmType, AsmBinaryOp, Operand, Operand),
     Cmp(AsmType, Operand, Operand),
     Jmp(Identifier),
     JmpCC(Condition, Identifier),
@@ -95,9 +122,15 @@ impl Condition {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum UnaryOp {
+pub enum AsmUnaryOp {
     Neg,
     Not,
+    //Unsigned shift right only once
+    Shr,
+    //(Un)signed shift left only once
+    Sal,
+    //Signed shift right only once
+    Sar,
 }
 
 #[derive(Clone, Debug)]
@@ -110,33 +143,92 @@ pub enum Operand {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum BinaryOp {
+pub enum AsmBinaryOp {
     Add,
     Sub,
     Imul,
     And,
+    DivDouble,
     Xor,
     Or,
-    //(Un)signed left
+    //(Un)signed left CL times
     Sal,
-    //Signed right
+    //Signed right CL times
     Sar,
-    //Unsigned right
+    //Unsigned right CL times
     Shr,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum Register {
-    Ax,
-    Dx,
-    Cx,
-    Di,
-    Si,
+    AX,
+    DX,
+    CX,
+    DI,
+    SI,
     R8,
     R9,
     R10,
     R11,
-    Sp,
+    SP,
+    XMM0,
+    XMM1,
+    XMM2,
+    XMM3,
+    XMM4,
+    XMM5,
+    XMM6,
+    XMM7,
+    XMM14,
+    XMM15,
+}
+
+macro_rules! reg_constructor {
+    ($name:ident, $variant:ident) => {
+        pub fn $name() -> Self {
+            Self::$variant
+        }
+    };
+}
+
+impl Register {
+    reg_constructor!(xmm0, XMM0);
+    reg_constructor!(xmm1, XMM1);
+    reg_constructor!(xmm2, XMM2);
+    reg_constructor!(xmm3, XMM3);
+    reg_constructor!(xmm4, XMM4);
+    reg_constructor!(xmm5, XMM5);
+    reg_constructor!(xmm6, XMM6);
+    reg_constructor!(xmm7, XMM7);
+    reg_constructor!(xmm14, XMM14);
+    reg_constructor!(xmm15, XMM15);
+
+    reg_constructor!(sp, SP);
+    reg_constructor!(rsp, SP);
+    reg_constructor!(esp, SP);
+
+    reg_constructor!(ax, AX);
+    reg_constructor!(rax, AX);
+    reg_constructor!(eax, AX);
+
+    reg_constructor!(si, SI);
+    reg_constructor!(rsi, SI);
+    reg_constructor!(esi, SI);
+
+    reg_constructor!(di, DI);
+    reg_constructor!(edi, DI);
+    reg_constructor!(rdi, DI);
+
+    reg_constructor!(cx, CX);
+    reg_constructor!(rcx, CX);
+    reg_constructor!(ecx, CX);
+
+    reg_constructor!(dx, DX);
+    reg_constructor!(rdx, DX);
+    reg_constructor!(edx, DX);
+
+    reg_constructor!(r11, R11);
+    reg_constructor!(r10, R10);
 }
 
 impl AsmInstruction {
@@ -147,8 +239,9 @@ impl AsmInstruction {
 
     pub fn mem_operands(&self) -> bool {
         match self {
-            Self::Binary(_, BinaryOp::Imul, _, _) => false,
-            Self::Mov(_, src, dst) | Self::Cmp(_, src, dst) | Self::Binary(_, _, src, dst) => {
+            Self::Binary(_, AsmBinaryOp::Imul, _, _) => false,
+            Self::Mov(_, src, dst) => src.is_mem() && dst.is_mem(),
+            Self::Cmp(t, src, dst) | Self::Binary(t, _, src, dst) if !t.is_double() => {
                 src.is_mem() && dst.is_mem()
             }
             _ => false,
@@ -164,14 +257,24 @@ impl AsmInstruction {
     }
 
     pub fn is_cmp_sndimm(&self) -> bool {
-        matches!(self, Self::Cmp(_, _, Operand::Imm(_)))
+        matches!(self, Self::Cmp(t, _, Operand::Imm(_)) if !t.is_double())
     }
 
     pub fn is_mul_sndmem(&self) -> bool {
         matches!(
             self,
-            Self::Binary(_, BinaryOp::Imul, _, Operand::Stack(_) | Operand::Data(_))
+            Self::Binary(
+                t,
+                AsmBinaryOp::Imul,
+                _,
+                Operand::Stack(_) | Operand::Data(_)
+            ) if !t.is_double()
         )
+    }
+
+    pub fn binary_double_dst_not_reg(&self) -> bool {
+        use AsmBinaryOp as O;
+        matches!(self, Self::Binary(AsmType::Double, O::Add | O::Sub | O::Imul | O::DivDouble | O::Xor, _, dst) if !dst.is_reg())
     }
 
     pub fn is_idiv_constant(&self) -> bool {
@@ -187,17 +290,29 @@ impl AsmInstruction {
             Self::Mov(AsmType::Quadword, Operand::Imm(src), _) if *src > i128::from(i32::MAX) || *src < i128::from(i32::MIN))
     }
 
+    pub fn cvttsd2si_dst_not_reg(&self) -> bool {
+        matches!(self, Self::Cvttsd2si(_, _, r) if !r.is_reg())
+    }
+
+    pub fn comisd_dst_not_reg(&self) -> bool {
+        matches!(self, Self::Cmp(AsmType::Double, _, dst) if !dst.is_reg())
+    }
+
+    pub fn cvtsi2sd_needs_fix(&self) -> bool {
+        matches!(self, Self::Cvtsi2sd(_, src, dst) if src.is_imm() || !dst.is_reg())
+    }
+
     pub fn is_imm_toobig(&self) -> bool {
         let cmp = |i| i > i128::from(i32::MAX) || i < i128::from(i32::MIN);
         match self {
             Self::Binary(
                 AsmType::Quadword,
-                BinaryOp::Add
-                | BinaryOp::Sub
-                | BinaryOp::Imul
-                | BinaryOp::Or
-                | BinaryOp::Xor
-                | BinaryOp::And,
+                AsmBinaryOp::Add
+                | AsmBinaryOp::Sub
+                | AsmBinaryOp::Imul
+                | AsmBinaryOp::Or
+                | AsmBinaryOp::Xor
+                | AsmBinaryOp::And,
                 Operand::Imm(i),
                 _,
             )
@@ -228,23 +343,25 @@ impl From<AstConst> for Operand {
             AstConst::Long(i) => Self::Imm(i128::from(i)),
             AstConst::UInt(u) => Self::Imm(i128::from(u)),
             AstConst::ULong(u) => Self::Imm(i128::from(u)),
-        }
-    }
-}
-impl From<TValue> for Operand {
-    fn from(value: TValue) -> Self {
-        match value {
-            TValue::Constant(u) => Self::from(u),
-            TValue::Var(id) => Self::Pseudo(id.clone()),
+            AstConst::Double(_) => Self::Data(CONST_TABLE.get_const_name(&value)),
         }
     }
 }
 
-impl From<TUnaryOp> for UnaryOp {
+impl From<TValue> for Operand {
+    fn from(value: TValue) -> Self {
+        match value {
+            TValue::Constant(u) => Self::from(u),
+            TValue::Var(id) => Self::Pseudo(id),
+        }
+    }
+}
+
+impl From<TUnaryOp> for AsmUnaryOp {
     fn from(value: TUnaryOp) -> Self {
         match value {
-            TUnaryOp::Complement => UnaryOp::Not,
-            TUnaryOp::Negate => UnaryOp::Neg,
+            TUnaryOp::Complement => AsmUnaryOp::Not,
+            TUnaryOp::Negate => AsmUnaryOp::Neg,
             TUnaryOp::LogicalNot => unreachable!(),
         }
     }
@@ -262,6 +379,7 @@ impl From<StaticVariable> for AsmStaticVar {
         let alignment = match init {
             StaticInit::Int(_) | StaticInit::UInt(_) => 4,
             StaticInit::Long(_) | StaticInit::ULong(_) => 8,
+            StaticInit::Double(_) => 16,
         };
 
         AsmStaticVar {
@@ -279,7 +397,7 @@ impl From<StaticVariable> for AsmTopLevelItem {
     }
 }
 
-impl From<TBinaryOp> for BinaryOp {
+impl From<TBinaryOp> for AsmBinaryOp {
     fn from(value: TBinaryOp) -> Self {
         match value {
             TBinaryOp::Add => Self::Add,
@@ -293,4 +411,303 @@ impl From<TBinaryOp> for BinaryOp {
             _ => unimplemented!(),
         }
     }
+}
+
+macro_rules! movq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Mov(AsmType::Quadword, $src, $dst)
+    };
+}
+
+macro_rules! movl {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Mov(AsmType::Longword, $src, $dst)
+    };
+}
+
+macro_rules! movsd {
+    ($src:ident, $dst:ident) => {
+        AsmInstruction::Mov(
+            AsmType::Double,
+            Operand::Reg(Register::$src),
+            Operand::Reg(Register::$dst),
+        )
+    };
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Mov(AsmType::Double, $src, $dst)
+    };
+}
+
+macro_rules! subsd {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::Sub, $src, $dst)
+    };
+}
+macro_rules! subl {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Longword, AsmBinaryOp::Sub, $src, $dst)
+    };
+}
+macro_rules! subq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::Sub, $src, $dst)
+    };
+}
+macro_rules! addsd {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::Add, $src, $dst)
+    };
+}
+
+macro_rules! addl {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Longword, AsmBinaryOp::Add, $src, $dst)
+    };
+}
+
+macro_rules! addq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::Add, $src, $dst)
+    };
+}
+
+macro_rules! label {
+    ($name:expr) => {
+        AsmInstruction::Label($name)
+    };
+}
+
+macro_rules! jae {
+    ($to:expr) => {
+        AsmInstruction::JmpCC(Condition::AE, $to)
+    };
+}
+
+macro_rules! ret {
+    () => {
+        AsmInstruction::Ret
+    };
+}
+
+macro_rules! jne {
+    ($to:expr) => {
+        AsmInstruction::JmpCC(Condition::NE, $to)
+    };
+}
+
+macro_rules! je {
+    ($to:expr) => {
+        AsmInstruction::JmpCC(Condition::E, $to)
+    };
+}
+
+macro_rules! jl {
+    ($to:expr) => {
+        AsmInstruction::JmpCC(Condition::L, $to)
+    };
+}
+
+macro_rules! jmp {
+    ($to:expr) => {
+        AsmInstruction::Jmp($to)
+    };
+}
+
+macro_rules! comisd {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Cmp(AsmType::Double, $src, $dst)
+    };
+}
+
+macro_rules! cmpl {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Cmp(AsmType::Longword, $src, $dst)
+    };
+}
+
+macro_rules! cmpq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Cmp(AsmType::Quadword, $src, $dst)
+    };
+}
+
+macro_rules! cvttsd2siq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Cvttsd2si(AsmType::Quadword, $src, $dst)
+    };
+}
+macro_rules! shrq {
+    ($src:expr) => {
+        AsmInstruction::Unary(AsmType::Quadword, AsmUnaryOp::Shr, $src)
+    };
+}
+
+macro_rules! assemble {
+    ($instructions:ident {}) => ();
+    //\[address\] [, exp]*
+    ($instructions:ident {$name:ident [$addr:expr] $(,$args:expr)* ; $($rest:tt)*}) => {
+        $instructions.push( $name!(Operand::Data($addr.clone()) $(,$args.clone())*));
+        assemble!($instructions {$($rest)*});
+    };
+    //\[address\], %REG
+    ($instructions:ident {$name:ident [$addr:ident], %$reg:ident ; $($rest:tt)* }) => {
+        $instructions.push($name!(Operand::Data($addr.clone()), Operand::Reg(Register::$reg())));
+        assemble!($instructions {$($rest)*});
+    };
+    // #IMM, %REG
+    ($instructions:ident {$name:ident #$l:expr, %$reg:ident ; $($rest:tt)*}) => {
+        $instructions.push($name!(Operand::Imm($l as i128), Operand::Reg(Register::$reg())));
+        assemble!($instructions {$($rest)*});
+    };
+    // #IMM, exp
+    ($instructions:ident {$name:ident #$l:expr, $arg:expr ; $($rest:tt)*}) => {
+        $instructions.push($name!(Operand::Imm($l as i128), $arg.clone()));
+        assemble!($instructions {$($rest)*});
+    };
+    // [exp,] #IMM [,exp]*
+    ($instructions:ident {$name:ident $($prearg:expr,)? #$l:literal $(,$args:expr)* ; $($rest:tt)* }) => {
+        $instructions.push($name!($($prearg.clone(),)? Operand::Imm($l as i128) $(,$args.clone())*));
+        assemble!($instructions {$($rest)*});
+    };
+    // %REG, %REG
+    ($instructions:ident {$name:ident %$reg1:ident, %$reg2:ident ; $($rest:tt)*}) => {
+        $instructions.push($name!(Operand::Reg(Register::$reg1()), Operand::Reg(Register::$reg2())));
+        assemble!($instructions {$($rest)*});
+    };
+    ($instructions:ident {$name:ident $type:expr, %$reg_src:ident, %$reg_dst:ident ; $($rest:tt)*}) => {
+        $instructions.push($name! ($type, Operand::Reg(Register::$reg_src()), Operand::Reg(Register::$reg_dst())));
+        assemble!($instructions {$($rest)*});
+    };
+    // [exp,]+ %REG [,exp]?
+    ($instructions:ident { $name:ident $($arg:expr,)+ %$reg:ident $(,$after:expr)? ; $($rest:tt)*}) => {
+        $instructions.push($name!( $($arg.clone(),)+ Operand::Reg(Register::$reg()) $(,$after)?));
+        assemble!($instructions {$($rest)*});
+    };
+    // %REG [, exp]*
+    ($instructions:ident { $name:ident %$reg:ident $(,$args:expr)* ; $($rest:tt)*}) => {
+        $instructions.push($name!(Operand::Reg(Register::$reg()) $(,$args.clone())*));
+        assemble!($instructions {$($rest)*});
+    };
+    // label:
+    ($instructions:ident {$label:ident: $($rest:tt)*}) => {
+        $instructions.push(AsmInstruction::Label($label.clone()));
+        assemble!($instructions {$($rest)*});
+    };
+    // exp [, exp]*
+    ($instructions:ident { $name:ident $($args:expr),+ ; $($rest:tt)* }) => {
+        $instructions.push($name!( $($args.clone()),+));
+        assemble!($instructions { $($rest)* });
+    };
+
+    ($instructions:ident { $name:ident ; $($rest:tt)*}) => {
+        $instructions.push($name!());
+        assemble!($instructions {$($rest)*})
+    };
+}
+
+macro_rules! xor {
+    ($type:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::Binary($type, AsmBinaryOp::Xor, $src, $dst)
+    };
+}
+
+macro_rules! xorl {
+    (%$src:ident, $dst:expr) => {
+        AsmInstruction::Binary(
+            AsmType::Longword,
+            AsmBinaryOp::Xor,
+            Operand::Reg(Register::$src),
+            $dst,
+        )
+    };
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Longword, AsmBinaryOp::Xor, $src, $dst)
+    };
+}
+
+macro_rules! xorq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::Xor, $src, $dst)
+    };
+}
+
+macro_rules! xorsd {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::Xor, $src, $dst)
+    };
+}
+
+macro_rules! movzx {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::MovZX($src, $dst)
+    };
+}
+
+macro_rules! movsx {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Movsx($src, $dst)
+    };
+}
+
+macro_rules! mov {
+    ($type:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::Mov($type, $src, $dst)
+    };
+}
+
+macro_rules! cmp {
+    ($type:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::Cmp($type, $src, $dst)
+    };
+}
+
+macro_rules! divsd {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::DivDouble, $src, $dst)
+    };
+}
+
+macro_rules! sete {
+    ($operand:expr) => {
+        AsmInstruction::SetCC(Condition::E, $operand)
+    };
+}
+
+macro_rules! cvtsi2sd {
+    ($type:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::Cvtsi2sd($type, $src, $dst)
+    };
+}
+macro_rules! cvttsd2si {
+    ($type:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::Cvttsd2si($type, $src, $dst)
+    };
+}
+
+macro_rules! cvtsi2sdq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Cvtsi2sd(AsmType::Quadword, $src, $dst)
+    };
+}
+
+macro_rules! andq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::And, $src, $dst)
+    };
+}
+
+macro_rules! orq {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::Or, $src, $dst)
+    };
+}
+macro_rules! push {
+    ($from:expr) => {
+        AsmInstruction::Push($from)
+    };
+}
+macro_rules! call {
+    ($name:expr) => {
+        AsmInstruction::Call($name)
+    };
 }
