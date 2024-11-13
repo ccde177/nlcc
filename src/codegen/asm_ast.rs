@@ -758,3 +758,21 @@ macro_rules! cmovcc {
         AsmInstruction::CmovCC($type, $condition, $src, $dst)
     };
 }
+
+macro_rules! idiv {
+    ($type:expr, $src:expr) => {
+        AsmInstruction::Idiv($type, $src)
+    };
+}
+
+macro_rules! div {
+    ($type:expr, $src:expr) => {
+        AsmInstruction::Div($type, $src)
+    };
+}
+
+macro_rules! imul {
+    ($type:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::Binary($type, AsmBinaryOp::Imul, $src, $dst)
+    };
+}
