@@ -17,6 +17,7 @@ pub fn allocate_stack(instructions: &mut AsmInstructions) {
             }
             I::Cvtsi2sd(_, src, dst)
             | I::Cvttsd2si(_, src, dst)
+            | I::CmovCC(_, _, src, dst)
             | I::Cmp(_, src, dst)
             | I::MovZX(src, dst)
             | I::Mov(_, src, dst)

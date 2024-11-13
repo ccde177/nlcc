@@ -67,6 +67,7 @@ pub enum AsmInstruction {
     Cvtsi2sd(AsmType, Operand, Operand),
     Call(Identifier),
     Push(Operand),
+    CmovCC(AsmType, Condition, Operand, Operand),
     Mov(AsmType, Operand, Operand),
     Movsx(Operand, Operand),
     MovZX(Operand, Operand),
@@ -83,7 +84,7 @@ pub enum AsmInstruction {
     Ret,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Condition {
     E,
     NE,
@@ -97,6 +98,9 @@ pub enum Condition {
     AE,
     B,
     BE,
+    //Parity
+    P,
+    NP,
 }
 
 impl Condition {
@@ -483,6 +487,18 @@ macro_rules! jae {
     };
 }
 
+macro_rules! jnp {
+    ($to:expr) => {
+        AsmInstruction::JmpCC(Condition::NP, $to)
+    };
+}
+
+macro_rules! jp {
+    ($to:expr) => {
+        AsmInstruction::JmpCC(Condition::P, $to)
+    };
+}
+
 macro_rules! ret {
     () => {
         AsmInstruction::Ret
@@ -672,6 +688,27 @@ macro_rules! sete {
         AsmInstruction::SetCC(Condition::E, $operand)
     };
 }
+macro_rules! setne {
+    ($dst:expr) => {
+        AsmInstruction::SetCC(Condition::NE, $dst)
+    };
+}
+
+macro_rules! setcc {
+    ($condition:expr, $dst:expr) => {
+        AsmInstruction::SetCC($condition, $dst)
+    };
+}
+macro_rules! setnp {
+    ($dst:expr) => {
+        AsmInstruction::SetCC(Condition::NP, $dst)
+    };
+}
+macro_rules! setp {
+    ($dst:expr) => {
+        AsmInstruction::SetCC(Condition::P, $dst)
+    };
+}
 
 macro_rules! cvtsi2sd {
     ($type:expr, $src:expr, $dst:expr) => {
@@ -709,5 +746,15 @@ macro_rules! push {
 macro_rules! call {
     ($name:expr) => {
         AsmInstruction::Call($name)
+    };
+}
+macro_rules! cmovnel {
+    ($src:expr, $dst:expr) => {
+        AsmInstruction::CmovCC(AsmType::Longword, Condition::NE, $src, $dst)
+    };
+}
+macro_rules! cmovcc {
+    ($type:expr, $condition:expr, $src:expr, $dst:expr) => {
+        AsmInstruction::CmovCC($type, $condition, $src, $dst)
     };
 }

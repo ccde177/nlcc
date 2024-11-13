@@ -141,6 +141,8 @@ impl fmt::Display for Condition {
             Self::AE => write!(f, "ae"),
             Self::B => write!(f, "b"),
             Self::BE => write!(f, "be"),
+            Self::P => write!(f, "p"),
+            Self::NP => write!(f, "np"),
         }
     }
 }
@@ -234,6 +236,11 @@ fn display_operand(op: &Operand, t: AsmType) -> String {
 impl fmt::Display for AsmInstruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::CmovCC(t, c, src, dst) => {
+                let src_str = display_operand(src, *t);
+                let dst_str = display_operand(dst, *t);
+                write!(f, "cmov{c}{t} {src_str}, {dst_str}")
+            }
             Self::Push(op) => write!(f, "pushq {}", display_operand(op, AsmType::Quadword)),
             Self::Call(name) => write!(f, "call {name}"),
             Self::Unary(t, op, operand) => {
@@ -309,16 +316,16 @@ impl fmt::Display for AsmInstruction {
                         unreachable!()
                     };
                     let reg_str = match reg {
-                        Register::AX => "al",
-                        Register::DX => "dl",
-                        Register::R8 => "r8b",
-                        Register::R10 => "r10b",
-                        Register::R11 => "r11b",
-                        Register::CX => "cl",
-                        Register::DI => "dil",
-                        Register::SI => "sil",
-                        Register::R9 => "r9b",
-                        Register::SP => "sp",
+                        Register::AX => "%al",
+                        Register::DX => "%dl",
+                        Register::R8 => "%r8b",
+                        Register::R10 => "%r10b",
+                        Register::R11 => "%r11b",
+                        Register::CX => "%cl",
+                        Register::DI => "%dil",
+                        Register::SI => "%sil",
+                        Register::R9 => "%r9b",
+                        Register::SP => "%sp",
                         _ => display_xmm(*reg),
                     };
                     write!(f, "set{cond_code} {reg_str}")

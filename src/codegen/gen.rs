@@ -216,13 +216,57 @@ fn trelational_to_asm(
         relative_to_condition(&op).to_unsigned()
     };
 
-    let cmp = AsmInstruction::Cmp(src1_type, src2, src1);
-    let mov = AsmInstruction::Mov(dst_type, Operand::Imm(0), dst.clone());
-    let setcc = AsmInstruction::SetCC(condition, dst);
+    if src1_type.is_double() {
+        if condition == Condition::E {
+            return handle_nan_e(src1, src2, dst, instructions);
+        }
+        if condition == Condition::NE {
+            return handle_nan_ne(src1, src2, dst, instructions);
+        }
+    }
 
-    instructions.push(cmp);
-    instructions.push(mov);
-    instructions.push(setcc);
+    if src1_type.is_double() {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let counter = COUNTER.fetch_add(1, Ordering::AcqRel);
+        let nan_label = format!("__nan.{counter}");
+        assemble!(instructions {
+            comisd src2, src1;
+            mov dst_type, #0, dst;
+            jp nan_label;
+            setcc condition, dst;
+            nan_label:
+        });
+    } else {
+        assemble!(instructions {
+            cmp src1_type, src2, src1;
+            mov dst_type, #0, dst;
+            setcc condition, dst;
+        });
+    }
+}
+
+fn handle_nan_ne(src1: Operand, src2: Operand, dst: Operand, instructions: &mut AsmInstructions) {
+    assemble!(instructions{
+        xorl dst, dst;
+        xorl %eax, %eax;
+        comisd src2, src1;
+        movl #1, %edx;
+        setp %eax;
+        cmovnel %edx, %eax;
+        movl %eax, dst;
+    });
+}
+
+fn handle_nan_e(src1: Operand, src2: Operand, dst: Operand, instructions: &mut AsmInstructions) {
+    assemble!(instructions {
+        xorl %eax, %eax;
+        xorl dst, dst;
+        comisd src2, src1;
+        movl #0, %edx;
+        setnp %eax;
+        cmovnel %edx, %eax;
+        movl %eax, dst;
+    });
 }
 
 fn truncate_to_asm(src: TValue, dst: TValue, instructions: &mut AsmInstructions) {
@@ -321,12 +365,12 @@ fn tacky_to_asm(body: TInstructions, instructions: &mut AsmInstructions) {
             TI::JumpIfZero(val, target) => tjz_to_asm(val, target, instructions),
             TI::JumpIfNotZero(val, target) => tjnz_to_asm(val, target, instructions),
             TI::Copy(src, dst) => tcopy_to_asm(src, dst, instructions),
-            TI::Label(id) => instructions.push(AsmInstruction::Label(id)),
-            TI::Jump(target) => instructions.push(AsmInstruction::Jmp(target)),
             TI::FunCall { name, args, dst } => tcall_to_asm(name, args, dst, instructions),
             TI::Truncate(src, dst) => truncate_to_asm(src, dst, instructions),
             TI::SignExtend(src, dst) => sign_extend_to_asm(src, dst, instructions),
             TI::Return(val) => treturn_to_asm(val, instructions),
+            TI::Label(id) => instructions.push(AsmInstruction::Label(id)),
+            TI::Jump(target) => instructions.push(AsmInstruction::Jmp(target)),
         }
     }
 }
