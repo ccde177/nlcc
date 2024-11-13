@@ -413,7 +413,6 @@ fn typecheck_return(e: Exp, sym_table: &mut SymTable) -> Result<Statement> {
         .read()
         .expect("Should not be poisoned")
         .clone();
-    println!("Converting {typechecked_inner:?} to {current_type:?}");
     let converted = convert_to(typechecked_inner, current_type);
     Ok(Statement::Return(converted))
 }

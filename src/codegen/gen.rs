@@ -592,9 +592,6 @@ fn tlogical_not_to_asm(src: TValue, dst: TValue, instructions: &mut AsmInstructi
     let src = Operand::from(src);
     let dst = Operand::from(dst);
 
-    println!(
-        "logcial not {src:?} to {dst:?};\nType of src: {src_type:?}\nType of dst: {dst_type:?}"
-    );
     if src_type.is_double() {
         assemble!(instructions {
             xorsd %xmm0, %xmm0;
