@@ -22,10 +22,12 @@ impl AsmType {
     pub fn is_double(&self) -> bool {
         matches!(self, Self::Double)
     }
+
     #[inline]
     pub fn is_quadword(&self) -> bool {
         matches!(self, Self::Quadword)
     }
+
     #[inline]
     pub fn is_longword(&self) -> bool {
         matches!(self, Self::Longword)
@@ -235,7 +237,189 @@ impl Register {
     reg_constructor!(r10, R10);
 }
 
+macro_rules! i_typed_constr {
+    ($name:ident | q -> $variant:ident ($($arg:ident),+)) => {
+        pub fn $name($($arg: Operand),+) -> AsmInstruction {
+            AsmInstruction::$variant(AsmType::Quadword, $($arg),+)
+        }
+    };
+    ($name:ident | l -> $variant:ident ($($arg:ident),+)) => {
+        pub fn $name($($arg: Operand),+) -> AsmInstruction {
+            AsmInstruction::$variant(AsmType::Longword, $($arg),+)
+        }
+    };
+    ($name:ident | d -> $variant:ident ($($arg:ident),+)) => {
+        pub fn $name($($arg: Operand),+) -> AsmInstruction {
+            AsmInstruction::$variant(AsmType::Double, $($arg),+)
+        }
+    };
+
+    ($name:ident | q -> #binary:$op:ident) => {
+        pub fn $name(src: Operand, dst: Operand) -> AsmInstruction {
+            AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::$op, src, dst)
+        }
+    };
+
+    ($name:ident | l -> #binary:$op:ident) => {
+        pub fn $name(src: Operand, dst: Operand) -> AsmInstruction {
+            AsmInstruction::Binary(AsmType::Longword, AsmBinaryOp::$op, src, dst)
+        }
+    };
+
+    ($name:ident | d -> #binary: $op:ident) => {
+        pub fn $name(src: Operand, dst: Operand) -> AsmInstruction {
+            AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::$op, src, dst)
+        }
+    };
+
+    ($name:ident | q -> #unary:$op:ident) => {
+        pub fn $name(src: Operand) -> AsmInstruction {
+            AsmInstruction::Unary(AsmType::Quadword, AsmUnaryOp::$op, src)
+        }
+    };
+
+    ($name:ident | l -> #unary:$op:ident) => {
+        pub fn $name(src: Operand) -> AsmInstruction {
+            AsmInstruction::Unary(AsmType::Longword, AsmUnaryOp::$op, src)
+        }
+    };
+
+    ($name:ident | d -> #unary:$op:ident) => {
+        pub fn $name(src: Operand) -> AsmInstruction {
+            AsmInstruction::Unary(AsmType::Double, AsmUnary::$op, src)
+        }
+    };
+}
+macro_rules! i_constr {
+    ($name:ident -> $variant:ident($($arg:ident: $type:ty),+)) => {
+        pub fn $name($($arg: $type),+) -> AsmInstruction {
+            AsmInstruction::$variant($($arg,)+)
+        }
+    };
+    ($name:ident -> #binary: $op:ident) => {
+        pub fn $name(asm_type: AsmType, src: Operand, dst: Operand) -> AsmInstruction {
+            AsmInstruction::Binary(asm_type, AsmBinaryOp::$op, src, dst)
+        }
+    };
+
+    ($name:ident -> #unary: $op:ident) => {
+        pub fn $name(asm_type: AsmType, src: Operand) -> AsmInstruction {
+            AsmInstruction::Unary(asm_type, AsmBinaryOp::$op, src)
+        }
+    };
+}
+
+macro_rules! i_cond_constr {
+    ($name:ident | e -> $variant:ident($($args:ident:$type:ty),*)) => {
+        pub fn $name($($args: $type),*) -> AsmInstruction {
+            AsmInstruction::$variant(Condition::E $(,$args)*)
+        }
+    };
+    ($name:ident | ne -> $variant:ident($($args:ident:$type:ty),*)) => {
+        pub fn $name($($args: $type),*) -> AsmInstruction {
+            AsmInstruction::$variant(Condition::NE $(,$args)*)
+        }
+    };
+    ($name:ident | np -> $variant:ident($($args:ident:$type:ty),*)) => {
+        pub fn $name($($args: $type),*) -> AsmInstruction {
+            AsmInstruction::$variant(Condition::NP $(,$args)*)
+        }
+    };
+    ($name:ident | p -> $variant:ident($($args:ident:$type:ty),*)) => {
+        pub fn $name($($args: $type),*) -> AsmInstruction {
+            AsmInstruction::$variant(Condition::P $(,$args)*)
+        }
+    };
+    ($name:ident | ae -> $variant:ident($($args:ident:$type:ty),*)) => {
+        pub fn $name($($args: $type),*) -> AsmInstruction {
+            AsmInstruction::$variant(Condition::AE $(,$args)*)
+        }
+    };
+    ($name:ident | l -> $variant:ident($($args:ident:$type:ty),*)) => {
+        pub fn $name($($args: $type),*) -> AsmInstruction {
+            AsmInstruction::$variant(Condition::L $(,$args)*)
+        }
+    };
+}
+
 impl AsmInstruction {
+    i_cond_constr!(sete | e -> SetCC(dst: Operand));
+    i_cond_constr!(setne | ne -> SetCC(dst: Operand));
+    i_cond_constr!(setp | p -> SetCC(dst: Operand));
+    i_cond_constr!(setnp | np -> SetCC(dst: Operand));
+    i_constr!(setcc -> SetCC(condition: Condition, dst: Operand));
+
+    i_cond_constr!(je | e -> JmpCC(dst: String));
+    i_cond_constr!(jne | ne -> JmpCC(dst: String));
+    i_cond_constr!(jp | p -> JmpCC(dst: String));
+    i_cond_constr!(jnp | np -> JmpCC(dst: String));
+    i_cond_constr!(jae | ae -> JmpCC(dst: String));
+    i_cond_constr!(jl | l -> JmpCC(dst: String));
+    i_constr!(jmp -> Jmp(label: String));
+
+    i_typed_constr!(comisd | d -> Cmp(src, dst));
+    i_typed_constr!(cmpq | q -> Cmp(src, dst));
+    i_typed_constr!(cmpl | l -> Cmp(src, dst));
+    i_constr!(cmp -> Cmp(t: AsmType, src: Operand, dst: Operand));
+
+    i_typed_constr!(movq | q -> Mov(src, dst));
+    i_typed_constr!(movl | l -> Mov(src, dst));
+    i_typed_constr!(movsd | d -> Mov(src, dst));
+    i_constr!(mov -> Mov(t: AsmType, src: Operand, dst: Operand));
+    i_constr!(movzx -> MovZX(src: Operand, dst: Operand));
+    i_constr!(movsx -> Movsx(src: Operand, dst: Operand));
+
+    i_typed_constr!(subq | q -> #binary:Sub);
+    i_typed_constr!(subl | l -> #binary:Sub);
+    i_typed_constr!(subsd | d -> #binary:Sub);
+    i_constr!(sub -> #binary:Sub);
+
+    i_typed_constr!(addq | q -> #binary:Add);
+    i_typed_constr!(addl | l -> #binary:Add);
+    i_typed_constr!(addsd | d -> #binary:Add);
+
+    i_typed_constr!(xorq | q -> #binary:Xor);
+    i_typed_constr!(xorl | l -> #binary:Xor);
+    i_typed_constr!(xorsd | d -> #binary:Xor);
+
+    i_typed_constr!(orq | q -> #binary:Or);
+    i_typed_constr!(orl | l -> #binary:Or);
+    i_constr!(or -> #binary:Or);
+
+    i_typed_constr!(shrq | q -> #unary:Shr);
+
+    i_typed_constr!(andq | q -> #binary:And);
+    i_typed_constr!(andl | l -> #binary:And);
+    i_constr!(and -> #binary:And);
+
+    i_typed_constr!(cvttsd2siq | q -> Cvttsd2si(src, dst));
+    i_typed_constr!(cvttsd2sil | l -> Cvttsd2si(src, dst));
+    i_constr!(cvttsd2si -> Cvttsd2si(t: AsmType, src: Operand, dst: Operand));
+
+    i_constr!(cvtsi2sd -> Cvtsi2sd(asm_type: AsmType, src: Operand, dst: Operand));
+    i_typed_constr!(cvtsi2sdq | q -> Cvtsi2sd(src, dst));
+
+    i_constr!(label -> Label(name: String));
+    i_constr!(push -> Push(src: Operand));
+
+    i_constr!(idiv -> Idiv(asm_type: AsmType, src: Operand));
+    i_constr!(div -> Div(asm_type: AsmType, src: Operand));
+    i_typed_constr!(divsd | d -> #binary:DivDouble);
+
+    i_constr!(imul -> #binary:Imul);
+
+    i_constr!(call -> Call(name: String));
+
+    i_constr!(cmovcc -> CmovCC(asm_type: AsmType, condition: Condition, src: Operand, dst: Operand));
+
+    pub fn cmovnel(src: Operand, dst: Operand) -> AsmInstruction {
+        AsmInstruction::CmovCC(AsmType::Longword, Condition::NE, src, dst)
+    }
+
+    pub fn ret() -> AsmInstruction {
+        AsmInstruction::Ret
+    }
+
     #[inline]
     pub fn is_zero_extend(&self) -> bool {
         matches!(self, Self::MovZX(_, _))
