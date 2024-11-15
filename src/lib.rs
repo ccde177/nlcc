@@ -5,7 +5,6 @@ This project follows this ideas and goals:
   * **No external dependencies** - Do not use any kind of libraries for command-line argument parsing, error handling and etc. All these features are really easy to implement thanks to featureful Rust's [std]. This rule also applies to regex, so unlike in the book, the lexer is handwritten. The only kind of dependency which can be possibly added in the future is Dev-only dependencies.
   * **No unstable features** - Project should be compilable with stable Rust toolchain.
   * **Reusable modules** - Every module except for [`ast`] is hidden by feature flag with the same name. This allows to reuse any module from this crate as a library (e.g. for lexing or parsing a C code).
-  * **Good documentation** - Since this is a recreational programming project, it is a good way for me to learn how to write a documentation.
   ## Command-line options
   ```
 Usage: nlcc [OPTIONS] FILE
@@ -38,6 +37,8 @@ Options:
   * **Chapter 10** - File-scoped variable declarations, static variables, extern variables. Extern and static functions.
   * **Chapter 11** - Long type and long numeric constants (e.g. `100l`).
   * **Chapter 12** - Unsigned int and unsigned long types and correlating numeric constant types (e.g. `100u` and `100ul`).
+  * **Chapter 13** - Double-precision floating point type `double`. `NaN` values handling.
+
 ## Compilation stages
 1. **Preprocessing** - Driver uses gcc to preproccess input file and writes the result to file with .i extension.
 2. **Tokenization(lexing)** - [lex](lexer::lex) scans preprocessed file for known token types and produses [Tokens](lexer::Tokens) - a collection of [LinedToken](lexer::LinedToken) - a structure which contains token type and its position in preprocessed file. When unknown token met(e.g. `1@2`,  `wHile`, ..) it produces [LexError](lexer::LexError). Driver stops after this stage if --lex argument is provided.
