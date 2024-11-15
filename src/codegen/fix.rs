@@ -1,3 +1,4 @@
+use crate::codegen::asm_macro::*;
 use crate::codegen::{AsmBinaryOp, AsmInstruction, AsmInstructions, AsmType, Operand, Register};
 
 fn fix_imul(instruction: AsmInstruction) -> AsmInstructions {

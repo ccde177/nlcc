@@ -1,5 +1,6 @@
-#[macro_use]
 pub mod asm_ast;
+#[macro_use]
+pub mod asm_macro;
 mod asm_sym_table;
 mod fix;
 mod gen;
