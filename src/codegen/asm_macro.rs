@@ -28,16 +28,19 @@ macro_rules! subsd {
         AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::Sub, $src, $dst)
     };
 }
+
 macro_rules! subl {
     ($src:expr, $dst:expr) => {
         AsmInstruction::Binary(AsmType::Longword, AsmBinaryOp::Sub, $src, $dst)
     };
 }
+
 macro_rules! subq {
     ($src:expr, $dst:expr) => {
         AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::Sub, $src, $dst)
     };
 }
+
 macro_rules! addsd {
     ($src:expr, $dst:expr) => {
         AsmInstruction::Binary(AsmType::Double, AsmBinaryOp::Add, $src, $dst)
@@ -133,6 +136,7 @@ macro_rules! cvttsd2siq {
         AsmInstruction::Cvttsd2si(AsmType::Quadword, $src, $dst)
     };
 }
+
 macro_rules! shrq {
     ($src:expr) => {
         AsmInstruction::Unary(AsmType::Quadword, AsmUnaryOp::Shr, $src)
@@ -201,6 +205,7 @@ macro_rules! assemble {
         assemble!($instructions {$($rest)*})
     };
 }
+pub(super) use assemble;
 
 macro_rules! xor {
     ($type:expr, $src:expr, $dst:expr) => {
@@ -269,6 +274,7 @@ macro_rules! sete {
         AsmInstruction::SetCC(Condition::E, $operand)
     };
 }
+
 macro_rules! setne {
     ($dst:expr) => {
         AsmInstruction::SetCC(Condition::NE, $dst)
@@ -280,11 +286,13 @@ macro_rules! setcc {
         AsmInstruction::SetCC($condition, $dst)
     };
 }
+
 macro_rules! setnp {
     ($dst:expr) => {
         AsmInstruction::SetCC(Condition::NP, $dst)
     };
 }
+
 macro_rules! setp {
     ($dst:expr) => {
         AsmInstruction::SetCC(Condition::P, $dst)
@@ -296,6 +304,7 @@ macro_rules! cvtsi2sd {
         AsmInstruction::Cvtsi2sd($type, $src, $dst)
     };
 }
+
 macro_rules! cvttsd2si {
     ($type:expr, $src:expr, $dst:expr) => {
         AsmInstruction::Cvttsd2si($type, $src, $dst)
@@ -319,21 +328,25 @@ macro_rules! orq {
         AsmInstruction::Binary(AsmType::Quadword, AsmBinaryOp::Or, $src, $dst)
     };
 }
+
 macro_rules! push {
     ($from:expr) => {
         AsmInstruction::Push($from)
     };
 }
+
 macro_rules! call {
     ($name:expr) => {
         AsmInstruction::Call($name)
     };
 }
+
 macro_rules! cmovnel {
     ($src:expr, $dst:expr) => {
         AsmInstruction::CmovCC(AsmType::Longword, Condition::NE, $src, $dst)
     };
 }
+
 macro_rules! cmovcc {
     ($type:expr, $condition:expr, $src:expr, $dst:expr) => {
         AsmInstruction::CmovCC($type, $condition, $src, $dst)

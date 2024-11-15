@@ -1,6 +1,6 @@
-pub mod asm_ast;
+mod asm_ast;
 #[macro_use]
-pub mod asm_macro;
+mod asm_macro;
 mod asm_sym_table;
 mod fix;
 mod gen;
@@ -9,7 +9,7 @@ mod stack;
 use crate::tacky::*;
 
 pub use asm_ast::*;
-pub use asm_sym_table::{AsmSymTabEntry, ASM_SYM_TABLE};
+pub use asm_sym_table::{AsmSymTabEntry, GlobalAsmSymTable, ASM_SYM_TABLE};
 
 use gen::{gen_toplevel_item, CONST_TABLE};
 

@@ -1,12 +1,14 @@
+use super::asm_ast::*;
 use super::fix::fix_instructions;
 use super::stack::allocate_stack;
+use super::ASM_SYM_TABLE;
+
 use crate::ast::{AstConst, Identifier};
-use crate::codegen::asm_ast::*;
-use crate::codegen::ASM_SYM_TABLE;
 use crate::semantic_analysis::StaticInit;
 use crate::tacky::{
     TBinaryOp, TFunction, TInstruction, TInstructions, TUnaryOp, TValue, TopLevelItem,
 };
+
 use std::collections::HashMap;
 use std::iter::successors;
 use std::sync::atomic::{AtomicUsize, Ordering};
