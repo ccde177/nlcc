@@ -1,3 +1,13 @@
+//! Code emission using [Display]
+//!
+//! Dummy module containing implementation of [Display] for [AsmAst](crate::codegen::asm_ast) which allows to use [to_string] method or as a formatting arg in any formatting context(e.g. [format!], [write!], [println!], ..)
+//!
+//! [Display]: https://doc.rust-lang.org/std/fmt/trait.Display.html
+//! [to_string]: https://doc.rust-lang.org/std/string/trait.ToString.html#tymethod.to_string
+//! [format!]: https://doc.rust-lang.org/std/macro.format.html
+//! [write!]: https://doc.rust-lang.org/std/macro.write.html
+//! [println!]: https://doc.rust-lang.org/std/macro.println.html
+
 use crate::codegen::*;
 use crate::semantic_analysis::StaticInit;
 
