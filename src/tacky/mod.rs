@@ -1,3 +1,6 @@
+//! [Three-address code] generation
+//!
+//![Three-Address Code]: https://en.wikipedia.org/wiki/Three-address_code
 #[cfg(test)]
 mod tacky_tests;
 mod tast;

@@ -6,7 +6,7 @@ use std::iter::IntoIterator;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 
-// Global symbol table
+/// Global symbol table singleton which is available after [validate](super::validate)
 pub static SYM_TABLE: GlobalSymTable = GlobalSymTable::new();
 #[derive(Debug)]
 pub struct GlobalSymTable {

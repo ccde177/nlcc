@@ -1,3 +1,4 @@
+//! Assembly generation
 mod asm_ast;
 #[macro_use]
 mod asm_macro;

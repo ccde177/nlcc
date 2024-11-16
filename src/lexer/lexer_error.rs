@@ -1,6 +1,6 @@
 use std::{error, fmt};
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum InnerLexError {
     UnexpectedChar(char),
     BadMcharOperator(String),
@@ -10,6 +10,7 @@ pub enum InnerLexError {
     UnexpectedEof,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LexError {
     inner: InnerLexError,
     ln: u64,
@@ -18,6 +19,10 @@ pub struct LexError {
 impl LexError {
     pub fn get_ln(&self) -> u64 {
         self.ln
+    }
+
+    pub fn get_inner(&self) -> &InnerLexError {
+        &self.inner
     }
 }
 

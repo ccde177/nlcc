@@ -1,3 +1,6 @@
+//! [Abstract Syntax Tree] representation.
+//!
+//! [Abstract Syntax Tree]: https://en.wikipedia.org/wiki/Abstract_syntax_tree
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 

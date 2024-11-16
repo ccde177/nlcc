@@ -1,6 +1,10 @@
 use super::lexer_error::InnerLexError;
 use std::ops::Deref;
 
+/// Token with attached line number to it.
+///
+/// To get inner [Token] use [Token::from] to consume or [get_inner](LinedToken::get_inner) to borrow.
+///
 #[derive(Debug, Clone)]
 pub struct LinedToken {
     pub(crate) inner: Token,
@@ -13,74 +17,142 @@ impl From<LinedToken> for Token {
     }
 }
 
+/// Basic token type
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    /// unsgined keyword
     Unsigned,
+    /// signed keyword
     Signed,
+    /// double keywrod
     Double,
+    /// int keyword
     Int,
+    /// any unknown keyword(variable names, function names, ..)
     Identifier(String),
+    /// (
     OpenParanth,
+    /// void keyword
     Void,
+    /// )
     CloseParanth,
+    /// {
     OpenCurly,
+    /// return keyword
     Return,
+    /// usigned numeric constants (e.g. 100u, 31489U)
     UnsignedConst(u64),
+    /// regular numeric constants (e.g. 100)
     Constant(i64),
+    /// long numeric constants (e.g. 100L, 31489l)
     LConstant(i64),
+    /// usigned long numeric constants (e.g. 100uL, 31489Ul)
     UnsignedLConst(u64),
+    /// double-precision floating point constants (e.g. 3.14)
     FPDouble(f64),
+    /// ;
     Semicolon,
+    /// }
     CloseCurly,
+    /// ~
     Tilde,
+    /// -
     Hyphen,
+    /// --
     Decrement,
+    /// +
     Plus,
+    /// *
     Asterisk,
+    /// /
     FSlash,
+    /// %
     Percent,
+    /// ++
     Increment,
+    /// !
     LogicalNot,
+    /// &&
     LogicalAnd,
+    /// ||
     LogicalOr,
+    /// ==
     IsEqual,
+    /// !=
     IsNotEqual,
+    /// <
     IsLessThan,
+    /// >
     IsGreaterThan,
+    /// <=
     IsLessThanOrEqual,
+    /// >=
     IsGreaterThanOrEqual,
+    /// &
     BitwiseAnd,
+    /// |
     BitwiseOr,
+    /// ^
     BitwiseXor,
+    /// <<
     ShiftLeft,
+    /// >>
     ShiftRight,
+    /// +=
     AssignAdd,
+    /// -=
     AssignSub,
+    /// *=
     AssignMul,
+    /// /=
     AssignDiv,
+    /// %=
     AssignMod,
+    /// &=
     AssignAnd,
+    /// |=
     AssignOr,
+    /// ^=
     AssignXor,
+    /// >>=
     AssignShr,
+    /// <<=
     AssignShl,
+    /// =
     Assign,
+    /// if keyword
     If,
+    /// else keyword
     Else,
+    /// ?
     QuestionMark,
+    /// goto keyword
     Goto,
+    /// :
     Colon,
+    /// do keyword
     Do,
+    /// while keyword
     While,
+    /// for keyword
     For,
+    /// break keyword
     Break,
+    /// continue keyword
     Continue,
+    /// case keyword
     Case,
+    /// "default" keyword
     KwDefault,
+    /// switch keyword
     Switch,
+    /// ,
     Comma,
+    /// "static" keyword
     Static,
+    /// "extern" keyword
     Extern,
+    /// long keyword
     Long,
 }
 
@@ -88,8 +160,13 @@ impl LinedToken {
     pub fn new(t: Token, ln: u64) -> Self {
         Self { inner: t, ln }
     }
+
     pub fn get_line(&self) -> u64 {
         self.ln
+    }
+
+    pub fn get_inner(&self) -> &Token {
+        &self.inner
     }
 }
 

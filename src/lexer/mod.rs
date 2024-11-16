@@ -1,3 +1,10 @@
+//! Converting source code to [Tokens]
+//!
+//! [lex] converts input string to [Vec] of [LinedToken] (token + line number) or [LexError].
+//! Line numbers may differ from line numbers in source code since lexer is applied after preprocessing.
+//! The reason for attaching line numbers to tokens is for better error reporting during later compiler stages(parsing, validating, ..).
+//!
+//! [Vec]: https://en.wikipedia.org/wiki/Abstract_syntax_tree
 mod cursor;
 mod lexer_error;
 #[cfg(test)]

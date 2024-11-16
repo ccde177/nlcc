@@ -1,3 +1,4 @@
+//! Parsing stream of [Tokens](crate::lexer::Tokens)
 mod cursor;
 mod parse_error;
 #[cfg(test)]
@@ -716,6 +717,7 @@ fn parse_declaration(cursor: &mut Cursor) -> Result<Declaration> {
     }
 }
 
+/// Produces [AST](crate::ast::Ast) from [Tokens](crate::lexer::Tokens) or throws [ParseError]
 pub fn parse(tokens: &[LinedToken]) -> Result<Ast> {
     let mut declarations = Vec::new();
     let mut cursor = Cursor::new(tokens);

@@ -1,5 +1,5 @@
 use crate::codegen::asm_macro::*;
-use crate::codegen::{AsmBinaryOp, AsmInstruction, AsmInstructions, AsmType, Operand, Register};
+use crate::codegen::{AsmInstruction, AsmInstructions, AsmType, Operand, Register};
 
 fn fix_imul(instruction: AsmInstruction) -> AsmInstructions {
     let mut result = AsmInstructions::new();

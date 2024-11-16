@@ -6,7 +6,7 @@ This project follows this ideas and goals:
   * **No unstable features** - Project should be compilable with stable Rust toolchain.
   * **Reusable modules** - Every module except for [ast] is hidden by feature flag with the same name. This allows to reuse any module from this crate as a library (e.g. for lexing or parsing a C code).
   ## Command-line options
-  ```
+  ```shell
 Usage: nlcc [OPTIONS] FILE
 
 Options:

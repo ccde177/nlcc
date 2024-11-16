@@ -10,7 +10,7 @@ pub struct AsmAst {
 
 pub type AsmInstructions = Vec<AsmInstruction>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AsmType {
     Longword,
     Quadword,
@@ -63,7 +63,7 @@ pub struct AsmFunction {
     pub global: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AsmInstruction {
     Cvttsd2si(AsmType, Operand, Operand),
     Cvtsi2sd(AsmType, Operand, Operand),
@@ -127,7 +127,7 @@ impl Condition {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum AsmUnaryOp {
     Neg,
     Not,
@@ -139,7 +139,7 @@ pub enum AsmUnaryOp {
     Sar,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operand {
     Imm(i128),
     Reg(Register),
@@ -165,7 +165,7 @@ pub enum AsmBinaryOp {
     Shr,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Register {
     AX,
     DX,
